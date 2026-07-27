@@ -11,6 +11,7 @@ Interactive by default::
 Every interactive choice also has a flag, so the same tool runs unattended::
 
     python -m worklog_scheduler preview --range this-month
+    python -m worklog_scheduler preview --recurring "TUE/2@14:00+60=Bi-weekly sync"
     python -m worklog_scheduler submit --live --yes
     python -m worklog_scheduler dashboard --from 2026-04-01 --to 2026-04-30
 
@@ -74,10 +75,10 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command")
 
     preview = subparsers.add_parser("preview", help="show the entries the schedule implies")
-    _add_schedule_flags(preview)
+    _add_schedule_flags(preview, on_subcommand=True)
 
     submit = subparsers.add_parser("submit", help="post the entries to Trackspace")
-    _add_schedule_flags(submit)
+    _add_schedule_flags(submit, on_subcommand=True)
     mode = submit.add_mutually_exclusive_group()
     mode.add_argument(
         "--dry-run", dest="dry_run", action="store_true", help="do not post (default)"
@@ -87,7 +88,7 @@ def build_parser() -> argparse.ArgumentParser:
     submit.add_argument("--yes", action="store_true", help="skip the live-submit confirmation")
 
     board = subparsers.add_parser("dashboard", help="what you have logged in the range")
-    _add_schedule_flags(board)
+    _add_schedule_flags(board, on_subcommand=True)
     board.add_argument(
         "--export",
         type=Path,
@@ -96,7 +97,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     config = subparsers.add_parser("config", help="show, export or load the saved config")
-    _add_schedule_flags(config)
+    _add_schedule_flags(config, on_subcommand=True)
     config.add_argument("--export", type=Path, metavar="PATH", help="write the config to PATH")
     config.add_argument("--load", type=Path, metavar="PATH", help="replace the config from PATH")
     config.add_argument("--save", action="store_true", help="write the config back to its file")
@@ -104,32 +105,51 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _add_schedule_flags(parser: argparse.ArgumentParser) -> None:
+def _add_schedule_flags(parser: argparse.ArgumentParser, *, on_subcommand: bool = False) -> None:
+    """Attach the schedule flags to a parser.
+
+    Subparsers suppress their defaults. Without that, argparse writes each
+    subcommand default over whatever the top-level parser already parsed, so
+    `--issue X preview` would silently lose the issue.
+    """
+    default = argparse.SUPPRESS if on_subcommand else None
     group = parser.add_argument_group("schedule")
-    group.add_argument("--issue", metavar="KEY", help="issue to book time against")
-    group.add_argument("--base-url", metavar="URL", help="Trackspace base URL")
-    group.add_argument("--timezone", metavar="TZ", help="timezone for computed start times")
-    group.add_argument("--from", dest="date_from", metavar="YYYY-MM-DD", help="range start")
-    group.add_argument("--to", dest="date_to", metavar="YYYY-MM-DD", help="range end")
-    group.add_argument("--range", dest="quick", choices=QUICK_RANGES, help="preset range")
+    group.add_argument("--issue", metavar="KEY", default=default, help="issue to book time against")
+    group.add_argument("--base-url", metavar="URL", default=default, help="Trackspace base URL")
+    group.add_argument(
+        "--timezone", metavar="TZ", default=default, help="timezone for computed start times"
+    )
+    group.add_argument(
+        "--from", dest="date_from", metavar="YYYY-MM-DD", default=default, help="range start"
+    )
+    group.add_argument(
+        "--to", dest="date_to", metavar="YYYY-MM-DD", default=default, help="range end"
+    )
+    group.add_argument(
+        "--range", dest="quick", choices=QUICK_RANGES, default=default, help="preset range"
+    )
     group.add_argument(
         "--exclude",
         action="append",
-        default=None,
+        default=default,
         metavar="YYYY-MM-DD",
         help="skip a date; repeatable",
     )
     group.add_argument(
         "--recurring",
         action="append",
-        default=None,
-        metavar="DAYS@HH:MM+MIN=COMMENT",
-        help="replace the recurring meetings, e.g. MON-FRI@10:00+30=Daily; repeatable",
+        default=default,
+        metavar="DAYS[/N][~ANCHOR]@HH:MM+MIN=COMMENT",
+        help=(
+            "replace the recurring meetings, e.g. MON-FRI@10:00+30=Daily. "
+            "/N repeats every N weeks and ~YYYY-MM-DD names a week it happens in, "
+            "e.g. TUE/2~2026-07-21@14:00+60=Bi-weekly sync; repeatable"
+        ),
     )
     group.add_argument(
         "--oneoff",
         action="append",
-        default=None,
+        default=default,
         metavar="DATE@HH:MM+MIN=COMMENT",
         help="add a one-off meeting, e.g. 2026-04-03@13:00+30=Workshop; repeatable",
     )
@@ -225,10 +245,19 @@ def print_schedule(console: Console, cfg: ScheduleConfig) -> None:
                 tables.Column("Days", width=14),
                 tables.Column("Time", width=5),
                 tables.Column("Duration", width=8, justify="right"),
-                tables.Column("Comment", width=tables.flex_width(console, [14, 5, 8])),
+                tables.Column("Repeat", width=22),
+                tables.Column(
+                    "Comment", width=tables.flex_width(console, [14, 5, 8, 22], minimum=12)
+                ),
             ],
             [
-                (m.weekdays_str(), m.time_str(), f"{m.duration_min} min", m.comment)
+                (
+                    m.weekdays_str(),
+                    m.time_str(),
+                    f"{m.duration_min} min",
+                    m.repeat_str(),
+                    m.comment,
+                )
                 for m in cfg.recurring
             ],
             title="Recurring meetings",
@@ -575,7 +604,8 @@ def _edit_recurring(cfg: ScheduleConfig) -> None:
     while True:
         choices: list[Choice] = [
             Choice(
-                f"{m.weekdays_str():<12} {m.time_str()}  {m.duration_min:>3} min  {m.comment}",
+                f"{m.weekdays_str():<12} {m.time_str()}  {m.duration_min:>3} min  "
+                f"{m.repeat_str():<22} {m.comment}",
                 index,
             )
             for index, m in enumerate(cfg.recurring)
@@ -584,8 +614,9 @@ def _edit_recurring(cfg: ScheduleConfig) -> None:
         selection = prompts.select("Recurring meetings", choices=choices)
         if selection == "back":
             return
+        default_anchor = _default_anchor(cfg)
         if selection == "add":
-            meeting = _prompt_recurring()
+            meeting = _prompt_recurring(default_anchor=default_anchor)
             if meeting is not None:
                 cfg.recurring.append(meeting)
             continue
@@ -594,14 +625,24 @@ def _edit_recurring(cfg: ScheduleConfig) -> None:
             choices=[Choice("Edit", "edit"), Choice("Delete", "delete"), Choice("Back", "back")],
         )
         if action == "edit":
-            meeting = _prompt_recurring(cfg.recurring[int(selection)])
+            meeting = _prompt_recurring(cfg.recurring[int(selection)], default_anchor)
             if meeting is not None:
                 cfg.recurring[int(selection)] = meeting
         elif action == "delete" and prompts.confirm("Remove this recurring meeting?"):
             del cfg.recurring[int(selection)]
 
 
-def _prompt_recurring(current: RecurringMeeting | None = None) -> RecurringMeeting | None:
+def _default_anchor(cfg: ScheduleConfig) -> date:
+    """The week an every-N-weeks meeting counts from unless told otherwise."""
+    try:
+        return date.fromisoformat(cfg.start_date)
+    except ValueError:
+        return today_local()
+
+
+def _prompt_recurring(
+    current: RecurringMeeting | None = None, default_anchor: date | None = None
+) -> RecurringMeeting | None:
     base = current or RecurringMeeting([0, 1, 2, 3, 4], 10, 0, 30, "")
     selected = prompts.checkbox(
         "Days of week",
@@ -612,6 +653,25 @@ def _prompt_recurring(current: RecurringMeeting | None = None) -> RecurringMeeti
     )
     if not selected:
         return None
+    interval = int(
+        prompts.select(
+            "How often",
+            choices=[
+                Choice("Every week", 1),
+                Choice("Every other week", 2),
+                Choice("Every 3 weeks", 3),
+                Choice("Every 4 weeks", 4),
+            ],
+            default=base.interval_weeks if base.interval_weeks in (1, 2, 3, 4) else 1,
+        )
+    )
+    anchor = ""
+    if interval > 1:
+        anchor = prompts.text(
+            "A date in a week it happens",
+            default=base.anchor or (default_anchor or today_local()).isoformat(),
+            validate=prompts.validate_date,
+        ).strip()
     clock = prompts.text(
         "Start time (HH:MM)", default=base.time_str(), validate=prompts.validate_time
     )
@@ -621,6 +681,8 @@ def _prompt_recurring(current: RecurringMeeting | None = None) -> RecurringMeeti
     comment = prompts.text("Comment", default=base.comment, validate=prompts.validate_nonempty)
     hour, minute = (int(part) for part in clock.split(":"))
     return RecurringMeeting(
+        interval_weeks=interval,
+        anchor=anchor,
         weekdays=sorted(int(day) for day in selected),
         hour=hour,
         minute=minute,

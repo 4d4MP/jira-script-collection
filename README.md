@@ -51,6 +51,18 @@ Dry run is the default: `submit` prints what it *would* post until you pass
 `--recurring MON-FRI@10:00+30=Daily`, `--oneoff 2026-04-03@13:00+30=Workshop`,
 `--exclude 2026-04-02` — so the same tool runs in CI.
 
+Recurring meetings can repeat every week or every N weeks:
+
+```
+--recurring "TUE@14:00+60=Weekly sync"                    # every Tuesday
+--recurring "TUE/2@14:00+60=Bi-weekly sync"               # every other Tuesday
+--recurring "TUE/2~2026-07-21@14:00+60=Bi-weekly sync"    # …counting from that week
+```
+
+`/N` sets the interval and `~YYYY-MM-DD` names a week it definitely happens in.
+Without an anchor the counting starts from the first week of the range, so pin
+one if the range is going to move.
+
 Configuration lives at `~/.jira_worklog_manager.json`, the original path, so
 existing configs keep working.
 

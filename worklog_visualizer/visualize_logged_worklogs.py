@@ -122,38 +122,53 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_report_flags(parser)
     subparsers = parser.add_subparsers(dest="command")
-    _add_report_flags(subparsers.add_parser("report", help="render one report and exit"))
+    _add_report_flags(
+        subparsers.add_parser("report", help="render one report and exit"), on_subcommand=True
+    )
     return parser
 
 
-def _add_report_flags(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--user", help="username of another user (default: yourself)")
+def _add_report_flags(parser: argparse.ArgumentParser, *, on_subcommand: bool = False) -> None:
+    """Attach the report flags to a parser.
+
+    The subcommand suppresses its defaults so that `--ago 7d report` keeps the
+    window instead of having it overwritten by the subparser's own default.
+    """
+    default = argparse.SUPPRESS if on_subcommand else None
+    parser.add_argument(
+        "--user", default=default, help="username of another user (default: yourself)"
+    )
     parser.add_argument(
         "--export",
         type=Path,
+        default=default,
         metavar="PATH",
         help="also write the report to PATH (.png/.pdf/.svg image, or .json/.csv rows)",
     )
     parser.add_argument(
         "--output",
         type=Path,
+        default=default,
         metavar="PATH",
         help=argparse.SUPPRESS,  # legacy spelling of --export, still honoured
     )
     parser.add_argument(
         "--show",
         action="store_true",
+        default=argparse.SUPPRESS if on_subcommand else False,
         help="open the exported image in a matplotlib window as well",
     )
     parser.add_argument(
         "--no-show",
         action="store_true",
+        default=argparse.SUPPRESS if on_subcommand else False,
         help=argparse.SUPPRESS,  # legacy no-op: nothing opens unless --show
     )
 
     win = parser.add_argument_group("window").add_mutually_exclusive_group()
     win.add_argument(
         "--ago",
+        default=default,
         help=(
             "rolling window ending at now. <number><unit>, "
             "units (case-sensitive): m=minutes, h=hours, d=days, "
@@ -164,6 +179,7 @@ def _add_report_flags(parser: argparse.ArgumentParser) -> None:
     win.add_argument(
         "--date",
         dest="date_range",
+        default=default,
         help=(
             "absolute date range, both endpoints inclusive. "
             "format: YYYY_MM_DD-YYYY_MM_DD or YYYYMMDD-YYYYMMDD "
@@ -174,6 +190,7 @@ def _add_report_flags(parser: argparse.ArgumentParser) -> None:
     win.add_argument(
         "--datetime",
         dest="datetime_range",
+        default=default,
         help=(
             "absolute datetime range, both endpoints inclusive. "
             "format: YYYY_MM_DD-hh:mm-YYYY_MM_DD-hh:mm "

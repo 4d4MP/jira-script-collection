@@ -213,3 +213,120 @@ def test_unknown_keys_are_dropped_and_broken_files_fall_back(
 
     missing = tmp_path / "nope.json"
     assert ScheduleConfig.load(missing, kb).issue_key == "CLOPSSEC-41456"
+
+
+# ---- every-N-weeks recurrence ---------------------------------------------
+def test_biweekly_fires_every_other_week(kb: KnowledgeBase) -> None:
+    cfg = april(kb)
+    cfg.start_date, cfg.end_date = "2026-07-01", "2026-07-31"
+    cfg.recurring = [
+        RecurringMeeting([1], 14, 0, 60, "Bi-weekly sync", interval_weeks=2, anchor="2026-07-07")
+    ]
+    days = [entry.day.isoformat() for entry in build_entries(cfg)]
+    # Tuesdays in July 2026: 7, 14, 21, 28 — every other one from the 7th.
+    assert days == ["2026-07-07", "2026-07-21"]
+
+
+def test_biweekly_anchor_can_sit_outside_the_range(kb: KnowledgeBase) -> None:
+    cfg = april(kb)
+    cfg.start_date, cfg.end_date = "2026-07-01", "2026-07-31"
+    cfg.recurring = [
+        RecurringMeeting([1], 14, 0, 60, "Bi-weekly sync", interval_weeks=2, anchor="2026-06-30")
+    ]
+    days = [entry.day.isoformat() for entry in build_entries(cfg)]
+    assert days == ["2026-07-14", "2026-07-28"]
+
+
+def test_biweekly_without_an_anchor_counts_from_the_range_start(kb: KnowledgeBase) -> None:
+    cfg = april(kb)
+    cfg.start_date, cfg.end_date = "2026-07-06", "2026-07-31"
+    cfg.recurring = [RecurringMeeting([1], 14, 0, 60, "Sync", interval_weeks=2)]
+    days = [entry.day.isoformat() for entry in build_entries(cfg)]
+    assert days == ["2026-07-07", "2026-07-21"]
+
+
+def test_every_third_and_fourth_week(kb: KnowledgeBase) -> None:
+    cfg = april(kb)
+    cfg.start_date, cfg.end_date = "2026-07-01", "2026-08-31"
+    cfg.recurring = [
+        RecurringMeeting([2], 9, 0, 30, "Every 3", interval_weeks=3, anchor="2026-07-01")
+    ]
+    days = [entry.day.isoformat() for entry in build_entries(cfg)]
+    assert days == ["2026-07-01", "2026-07-22", "2026-08-12"]
+
+
+def test_weekly_is_unchanged_by_the_interval_field(kb: KnowledgeBase) -> None:
+    cfg = april(kb)
+    assert len(build_entries(cfg)) == 7
+    assert all(meeting.interval_weeks == 1 for meeting in cfg.recurring)
+
+
+def test_biweekly_still_respects_exclusions(kb: KnowledgeBase) -> None:
+    cfg = april(kb)
+    cfg.start_date, cfg.end_date = "2026-07-01", "2026-07-31"
+    cfg.exclude_dates = ["2026-07-21"]
+    cfg.recurring = [
+        RecurringMeeting([1], 14, 0, 60, "Sync", interval_weeks=2, anchor="2026-07-07")
+    ]
+    assert [entry.day.isoformat() for entry in build_entries(cfg)] == ["2026-07-07"]
+
+
+def test_bad_anchor_is_reported(kb: KnowledgeBase) -> None:
+    cfg = april(kb)
+    cfg.recurring = [RecurringMeeting([1], 14, 0, 60, "Sync", interval_weeks=2, anchor="last-tue")]
+    with pytest.raises(ConfigurationError, match="bad anchor date"):
+        build_entries(cfg)
+
+
+def test_parse_recurring_spec_with_interval_and_anchor() -> None:
+    assert parse_recurring_spec("TUE/2@14:00+60=Bi-weekly sync") == RecurringMeeting(
+        [1], 14, 0, 60, "Bi-weekly sync", interval_weeks=2
+    )
+    assert parse_recurring_spec("TUE/2~2026-07-21@14:00+60=Sync") == RecurringMeeting(
+        [1], 14, 0, 60, "Sync", interval_weeks=2, anchor="2026-07-21"
+    )
+    # The plain form still parses, and stays weekly.
+    assert parse_recurring_spec("MON-FRI@10:00+30=Daily").interval_weeks == 1
+
+
+@pytest.mark.parametrize(
+    "spec",
+    ["TUE/0@14:00+60=Sync", "TUE/2~notadate@14:00+60=Sync", "TUE/@14:00+60=Sync"],
+)
+def test_bad_interval_specs(spec: str) -> None:
+    with pytest.raises(ConfigurationError):
+        parse_recurring_spec(spec)
+
+
+def test_repeat_str_reads_naturally() -> None:
+    assert RecurringMeeting([1], 9, 0, 30, "x").repeat_str() == "weekly"
+    assert RecurringMeeting([1], 9, 0, 30, "x", interval_weeks=2).repeat_str() == "every other week"
+    assert (
+        RecurringMeeting([1], 9, 0, 30, "x", interval_weeks=2, anchor="2026-07-07").repeat_str()
+        == "every other week from 2026-07-07"
+    )
+    assert RecurringMeeting([1], 9, 0, 30, "x", interval_weeks=3).repeat_str() == "every 3 weeks"
+
+
+def test_old_configs_without_the_interval_fields_still_load(
+    kb: KnowledgeBase, tmp_path: Path
+) -> None:
+    path = tmp_path / "config.json"
+    path.write_text(
+        '{"recurring": [{"weekdays": [1], "hour": 14, "minute": 0, '
+        '"duration_min": 60, "comment": "Sync"}]}',
+        encoding="utf-8",
+    )
+    meeting = ScheduleConfig.load(path, kb).recurring[0]
+    assert meeting.interval_weeks == 1
+    assert meeting.anchor == ""
+
+
+def test_interval_fields_survive_a_round_trip(kb: KnowledgeBase, tmp_path: Path) -> None:
+    cfg = ScheduleConfig.defaults(kb, today=date(2026, 7, 15))
+    cfg.recurring.append(
+        RecurringMeeting([1], 15, 0, 60, "Internal sync", interval_weeks=2, anchor="2026-07-21")
+    )
+    path = tmp_path / "config.json"
+    cfg.save(path)
+    assert ScheduleConfig.load(path, kb) == cfg

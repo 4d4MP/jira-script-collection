@@ -272,3 +272,56 @@ def test_ctrl_c_exits_with_a_summary(
         run("--config", str(config_path), "preview")
     assert caught.value.code == 130
     assert "Cancelled" in capsys.readouterr().out
+
+
+def test_biweekly_flag_expands_every_other_week(config_path: Path, capsys: Any) -> None:
+    code = run(
+        "--config",
+        str(config_path),
+        "preview",
+        "--from",
+        "2026-07-01",
+        "--to",
+        "2026-07-31",
+        "--recurring",
+        "TUE/2~2026-07-07@14:00+60=Bi-weekly sync",
+    )
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "2 entries" in out
+    assert "2026-07-07" in out
+    assert "2026-07-21" in out
+    assert "2026-07-14" not in out
+
+
+def test_config_shows_the_repeat_column(config_path: Path, capsys: Any) -> None:
+    code = run(
+        "--config",
+        str(config_path),
+        "--recurring",
+        "TUE/2@14:00+60=Bi-weekly sync",
+        "config",
+    )
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "Repeat" in out
+    assert "every other week" in out
+
+
+def test_flags_before_the_subcommand_are_not_discarded(config_path: Path, capsys: Any) -> None:
+    """argparse would otherwise let the subparser's defaults overwrite them."""
+    code = run(
+        "--config",
+        str(config_path),
+        "--issue",
+        "OTHER-99",
+        "--from",
+        "2026-07-01",
+        "--to",
+        "2026-07-03",
+        "preview",
+    )
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "OTHER-99" in out
+    assert "2026-07-01 → 2026-07-03" in out

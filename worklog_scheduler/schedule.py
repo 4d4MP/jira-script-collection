@@ -25,8 +25,12 @@ from .config import WEEKDAY_NAMES, OneOffMeeting, RecurringMeeting, ScheduleConf
 
 _WEEKDAY_LOOKUP = {name.upper(): index for index, name in enumerate(WEEKDAY_NAMES)}
 
+#: DAYS[/EVERY_N_WEEKS][~ANCHOR]@HH:MM+MINUTES=COMMENT
 _RECURRING_SPEC = re.compile(
-    r"^(?P<days>[A-Za-z0-9,\-]+)@(?P<hour>\d{1,2}):(?P<minute>\d{2})"
+    r"^(?P<days>[A-Za-z0-9,\-]+)"
+    r"(?:/(?P<interval>\d+))?"
+    r"(?:~(?P<anchor>\d{4}-\d{2}-\d{2}))?"
+    r"@(?P<hour>\d{1,2}):(?P<minute>\d{2})"
     r"\+(?P<duration>\d+)=(?P<comment>.+)$"
 )
 _ONEOFF_SPEC = re.compile(
@@ -73,11 +77,26 @@ def build_entries(cfg: ScheduleConfig) -> list[WorklogEntry]:
 
     entries: list[WorklogEntry] = []
 
+    # Every-N-weeks meetings count from their own anchor week when they have one,
+    # and from the start of the range when they do not.
+    anchor_weeks: list[date] = []
+    for meeting in cfg.recurring:
+        if meeting.anchor:
+            try:
+                anchor = date.fromisoformat(meeting.anchor)
+            except ValueError as exc:
+                raise ConfigurationError(
+                    f"bad anchor date {meeting.anchor!r} on {meeting.comment!r}: {exc}"
+                ) from exc
+        else:
+            anchor = start
+        anchor_weeks.append(anchor - timedelta(days=anchor.weekday()))
+
     for day in daterange(start, end):
         if day in excluded:
             continue
-        for meeting in cfg.recurring:
-            if day.weekday() in meeting.weekdays:
+        for meeting, anchor_week in zip(cfg.recurring, anchor_weeks, strict=True):
+            if meeting.occurs_on(day, anchor_week):
                 entries.append(
                     WorklogEntry(
                         day=day,
@@ -177,24 +196,40 @@ def _weekday_index(token: str) -> int:
 
 
 def parse_recurring_spec(spec: str) -> RecurringMeeting:
-    """``MON-FRI@10:00+30=Daily`` → a recurring meeting."""
+    """``MON-FRI@10:00+30=Daily`` → a recurring meeting.
+
+    ``/N`` after the days makes it every N weeks, and ``~YYYY-MM-DD`` names a week
+    it definitely happens in::
+
+        TUE/2@14:00+60=Bi-weekly sync
+        TUE/2~2026-07-21@14:00+60=Bi-weekly sync
+    """
     match = _RECURRING_SPEC.match(spec.strip())
     if not match:
         raise ConfigurationError(
-            f"invalid --recurring value {spec!r}. Expected DAYS@HH:MM+MINUTES=COMMENT, "
-            "e.g. MON-FRI@10:00+30=Daily"
+            f"invalid --recurring value {spec!r}. Expected "
+            "DAYS[/EVERY_N_WEEKS][~ANCHOR]@HH:MM+MINUTES=COMMENT, "
+            "e.g. MON-FRI@10:00+30=Daily or TUE/2@14:00+60=Bi-weekly sync"
         )
     hour, minute = int(match["hour"]), int(match["minute"])
     _check_clock(hour, minute, spec)
     duration = int(match["duration"])
     if duration <= 0:
         raise ConfigurationError(f"duration must be positive in {spec!r}")
+    interval = int(match["interval"] or 1)
+    if interval <= 0:
+        raise ConfigurationError(f"the week interval must be positive in {spec!r}")
+    anchor = match["anchor"] or ""
+    if anchor:
+        parse_iso_date(anchor, "anchor date")
     return RecurringMeeting(
         weekdays=parse_weekdays(match["days"]),
         hour=hour,
         minute=minute,
         duration_min=duration,
         comment=match["comment"].strip(),
+        interval_weeks=interval,
+        anchor=anchor,
     )
 
 

@@ -26,13 +26,18 @@ CONFIG_PATH = Path.home() / ".jira_worklog_manager.json"
 
 @dataclass
 class RecurringMeeting:
-    """A meeting that repeats on given weekdays."""
+    """A meeting that repeats on given weekdays, every week or every N weeks."""
 
     weekdays: list[int]
     hour: int
     minute: int
     duration_min: int
     comment: str
+    #: 1 = weekly, 2 = every other week, and so on.
+    interval_weeks: int = 1
+    #: A date in a week the meeting *does* happen. Empty means "count from the
+    #: start of the range", which is what a fresh bi-weekly meeting gets.
+    anchor: str = ""
 
     def weekdays_str(self) -> str:
         selected = set(self.weekdays)
@@ -44,6 +49,27 @@ class RecurringMeeting:
 
     def time_str(self) -> str:
         return f"{self.hour:02d}:{self.minute:02d}"
+
+    def repeat_str(self) -> str:
+        if self.interval_weeks <= 1:
+            return "weekly"
+        every = (
+            "every other week" if self.interval_weeks == 2 else f"every {self.interval_weeks} weeks"
+        )
+        return f"{every} from {self.anchor}" if self.anchor else every
+
+    def occurs_on(self, day: date, anchor_week: date) -> bool:
+        """Does this meeting happen on ``day``?
+
+        ``anchor_week`` is the Monday the counting starts from — the meeting's own
+        anchor when it has one, otherwise the caller's fallback.
+        """
+        if day.weekday() not in self.weekdays:
+            return False
+        if self.interval_weeks <= 1:
+            return True
+        weeks_apart = ((day - timedelta(days=day.weekday())) - anchor_week).days // 7
+        return weeks_apart % self.interval_weeks == 0
 
 
 @dataclass
@@ -109,6 +135,9 @@ class ScheduleConfig:
                     minute=int(r["minute"]),
                     duration_min=int(r["duration_min"]),
                     comment=str(r["comment"]),
+                    # Absent in configs written before bi-weekly existed.
+                    interval_weeks=int(r.get("interval_weeks", 1) or 1),
+                    anchor=str(r.get("anchor", "")),
                 )
                 for r in data.get("recurring", [])
             ],
@@ -138,6 +167,8 @@ class ScheduleConfig:
                 hour=int(entry["hour"]),
                 minute=int(entry["minute"]),
                 duration_min=int(entry["duration_min"]),
+                interval_weeks=int(entry.get("interval_weeks", 1) or 1),
+                anchor=str(entry.get("anchor", "")),
                 comment=str(entry["comment"]),
             )
             for entry in cast(list[dict[str, Any]], knowledge.default("recurring_meetings"))

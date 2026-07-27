@@ -64,9 +64,14 @@ including error, empty and malformed cases. The whole test suite runs off these.
 * `ui/` — the entire CLI look: `theme` (fixed colours/glyphs, `NO_COLOR` and
   dumb-terminal degradation), `chrome` (boxed header, `LiveStatus`, `cancellable`
   for Ctrl+C → exit 130 with a summary, outcome-first `final`), `tables`
-  (truncate, never wrap), `charts` (Unicode bars, terminal-only), `prompts`
-  (questionary via `unsafe_ask()` so Ctrl+C propagates). Build CLIs from these
-  rather than hand-rolling, so the two tools cannot drift apart.
+  (truncate, never wrap; `flex_width` sizes the one prose column to the
+  terminal), `charts` (Unicode bars, terminal-only), `prompts` (questionary via
+  `unsafe_ask()` so Ctrl+C propagates). Build CLIs from these rather than
+  hand-rolling, so the two tools cannot drift apart.
+* Palette rule: every colour is a mid-luminance 256-colour value that reads on a
+  **white** terminal as well as a black one. The pale ANSI basics (`yellow`,
+  `cyan`), `dim`, and `white` are banned — a test enforces it — and `value`
+  deliberately carries no colour so it inherits the terminal foreground.
 
 ### The two tools
 
@@ -75,7 +80,8 @@ but its **behaviour is frozen**: same schedule expansion, dry-run default, same
 posting semantics, same dashboard figures, same config file at
 `~/.jira_worklog_manager.json` with the historical `jira_base` key. Split as
 config → schedule (expansion + flag-spec parsing) → dashboard (fetch, aggregate,
-render) → entry point.
+render) → entry point. Recurring meetings gained `interval_weeks` / `anchor` for
+every-N-weeks repeats; both default so pre-existing config files still load.
 
 `worklog_visualizer/` was rewritten the same way — interactive by default,
 terminal-first rendering — while keeping what it *computes*: window parsing,
@@ -89,6 +95,11 @@ file is written only when `--export` (or legacy `--output`) names one, and a
 malformed `started` is skipped with a warning instead of ending the run. The two
 tools still have different IP-normalising regexes on purpose (`kb/quirks.md`
 #13).
+
+Both tools attach their shared flags to the top-level parser *and* to each
+subparser, with `argparse.SUPPRESS` as the subparser default. Without that,
+argparse writes the subcommand's default over anything parsed before the
+subcommand and `--issue X preview` silently loses the issue.
 
 ### CLI contract for anything new
 
