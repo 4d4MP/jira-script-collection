@@ -90,3 +90,6 @@ exclude_dirs = [".venv", "tests"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+# Test modules import helpers as `tests.conftest`, which needs the repo root
+# on sys.path. `python -m pytest` adds it implicitly; bare `pytest` does not.
+pythonpath = ["."]
