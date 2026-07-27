@@ -67,7 +67,7 @@ def test_csv_round_trip_keeps_the_fixed_column_order(tmp_path: Path) -> None:
 
 
 def test_unknown_suffix_is_a_configuration_error(tmp_path: Path) -> None:
-    with pytest.raises(ConfigurationError, match="use .json or .csv"):
+    with pytest.raises(ConfigurationError, match=r"use \.json or \.csv"):
         export.write_canonical(rows(), tmp_path / "rows.txt")
     with pytest.raises(ConfigurationError, match="cannot read"):
         export.read_canonical(tmp_path / "rows.txt")
