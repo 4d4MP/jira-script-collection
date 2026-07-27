@@ -1,0 +1,10 @@
+{
+  "self": "https://trackspace.lhsystems.com/rest/api/2/user?username=adam.papp",
+  "key": "JIRAUSER10042",
+  "name": "adam.papp",
+  "emailAddress": "adam.papp@example.invalid",
+  "displayName": "Adam Papp",
+  "active": true,
+  "timeZone": "Europe/Berlin",
+  "locale": "en_GB"
+}

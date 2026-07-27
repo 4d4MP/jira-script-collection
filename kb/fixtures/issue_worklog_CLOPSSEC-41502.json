@@ -1,0 +1,22 @@
+{
+  "startAt": 0,
+  "maxResults": 20,
+  "total": 1,
+  "worklogs": [
+    {
+      "id": "900501",
+      "issueId": "615012",
+      "author": {
+        "key": "JIRAUSER10042",
+        "name": "adam.papp",
+        "displayName": "Adam Papp",
+        "emailAddress": "adam.papp@example.invalid",
+        "active": true
+      },
+      "comment": "Triage",
+      "started": "2026-04-09T11:00:00.000+0200",
+      "timeSpent": "1h",
+      "timeSpentSeconds": 3600
+    }
+  ]
+}

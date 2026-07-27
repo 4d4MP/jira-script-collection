@@ -1,0 +1,114 @@
+{
+  "startAt": 0,
+  "maxResults": 20,
+  "total": 7,
+  "worklogs": [
+    {
+      "self": "https://trackspace.lhsystems.com/rest/api/2/issue/614560/worklog/900101",
+      "id": "900101",
+      "issueId": "614560",
+      "author": {
+        "key": "JIRAUSER10042",
+        "name": "adam.papp",
+        "displayName": "Adam Papp",
+        "emailAddress": "adam.papp@example.invalid",
+        "active": true
+      },
+      "comment": "Daily",
+      "created": "2026-04-01T10:31:04.000+0200",
+      "updated": "2026-04-01T10:31:04.000+0200",
+      "started": "2026-04-01T10:00:00.000+0200",
+      "timeSpent": "30m",
+      "timeSpentSeconds": 1800
+    },
+    {
+      "id": "900102",
+      "issueId": "614560",
+      "author": {
+        "key": "JIRAUSER10042",
+        "name": "adam.papp",
+        "displayName": "Adam Papp",
+        "emailAddress": "adam.papp@example.invalid",
+        "active": true
+      },
+      "comment": "Daily",
+      "started": "2026-04-02T10:00:00.000+0200",
+      "timeSpent": "30m",
+      "timeSpentSeconds": 1800
+    },
+    {
+      "id": "900103",
+      "issueId": "614560",
+      "author": {
+        "key": "JIRAUSER10042",
+        "name": "adam.papp",
+        "displayName": "Adam Papp",
+        "emailAddress": "adam.papp@example.invalid",
+        "active": true
+      },
+      "comment": "GAC GDN",
+      "started": "2026-04-03T13:00:00.000+0200",
+      "timeSpent": "30m",
+      "timeSpentSeconds": 1800
+    },
+    {
+      "id": "900104",
+      "issueId": "614560",
+      "author": {
+        "key": "JIRAUSER10042",
+        "name": "adam.papp",
+        "displayName": "Adam Papp",
+        "emailAddress": "adam.papp@example.invalid",
+        "active": true
+      },
+      "comment": "Daily",
+      "started": "2026-03-30T10:00:00.000+0200",
+      "timeSpent": "30m",
+      "timeSpentSeconds": 1800
+    },
+    {
+      "id": "900105",
+      "issueId": "614560",
+      "author": {
+        "key": "JIRAUSER10077",
+        "name": "jane.doe",
+        "displayName": "Jane Doe",
+        "emailAddress": "jane.doe@example.invalid",
+        "active": true
+      },
+      "comment": "SecOps - technical sync",
+      "started": "2026-04-02T11:00:00.000+0200",
+      "timeSpent": "1h",
+      "timeSpentSeconds": 3600
+    },
+    {
+      "id": "900106",
+      "issueId": "614560",
+      "author": {
+        "key": "JIRAUSER10042",
+        "name": "adam.papp",
+        "displayName": "Adam Papp",
+        "emailAddress": "adam.papp@example.invalid",
+        "active": true
+      },
+      "comment": "Daily",
+      "started": "2026-04-06T08:00:00.000Z",
+      "timeSpent": "30m",
+      "timeSpentSeconds": 1800
+    },
+    {
+      "id": "900107",
+      "issueId": "614560",
+      "author": {
+        "key": "JIRAUSER10042",
+        "name": "adam.papp",
+        "displayName": "Adam Papp",
+        "emailAddress": "adam.papp@example.invalid",
+        "active": true
+      },
+      "started": "2026-04-07T10:00:00.000+0200",
+      "timeSpent": "30m",
+      "timeSpentSeconds": 1800
+    }
+  ]
+}

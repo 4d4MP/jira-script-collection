@@ -1,0 +1,63 @@
+{
+  "startAt": 0,
+  "maxResults": 20,
+  "total": 5,
+  "worklogs": [
+    {
+      "id": "900301",
+      "author": {
+        "key": "JIRAUSER10042",
+        "name": "adam.papp",
+        "displayName": "Adam Papp",
+        "active": true
+      },
+      "comment": "no started field at all",
+      "timeSpentSeconds": 1800
+    },
+    {
+      "id": "900302",
+      "author": {
+        "key": "JIRAUSER10042",
+        "name": "adam.papp",
+        "displayName": "Adam Papp",
+        "active": true
+      },
+      "comment": "started is not a timestamp",
+      "started": "not-a-timestamp",
+      "timeSpentSeconds": 1800
+    },
+    {
+      "id": "900303",
+      "author": {},
+      "comment": "author object is empty",
+      "started": "2026-04-13T10:00:00.000+0200",
+      "timeSpentSeconds": 1800
+    },
+    {
+      "id": "900304",
+      "author": {
+        "key": "JIRAUSER10042",
+        "name": "adam.papp",
+        "displayName": "Adam Papp",
+        "active": true
+      },
+      "comment": "timeSpentSeconds missing",
+      "started": "2026-04-14T10:00:00.000+0200"
+    },
+    {
+      "id": "900305",
+      "author": {
+        "key": "JIRAUSER10042",
+        "name": "adam.papp",
+        "displayName": "Adam Papp",
+        "active": true
+      },
+      "comment": {
+        "type": "doc",
+        "content": [{"type": "paragraph", "content": [{"type": "text", "text": "an ADF comment, not a string"}]}]
+      },
+      "started": "2026-04-15T10:00:00.000+0200",
+      "timeSpentSeconds": 1800
+    }
+  ]
+}

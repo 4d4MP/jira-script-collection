@@ -1,0 +1,276 @@
+{
+  "schema_version": 1,
+  "description": "Machine-readable map of the Trackspace (Jira Data Center) instance. Tools import this instead of hardcoding literals. Every entry carries a `source` giving the script and line the fact was extracted from, or the literal string \"inferred\".",
+  "extracted_from": {
+    "work_log.py": "Original interactive Tkinter worklog manager. Now worklog_scheduler/schedule_and_post_worklogs.py",
+    "work.py": "Original worklog visualiser (its own docstring called it visualize_jira_worklogs.py). Now worklog_visualizer/visualize_logged_worklogs.py"
+  },
+  "instance": {
+    "product": "Jira Data Center / Server",
+    "base_url": "https://trackspace.lhsystems.com",
+    "api_version": "2",
+    "api_root": "/rest/api/2",
+    "pat_profile_url": "https://trackspace.lhsystems.com/secure/ViewProfile.jspa",
+    "source": {
+      "base_url": "work_log.py:127 (AppConfig.jira_base default), work.py:694 (JIRA_BASE_URL default)",
+      "api_version": "work_log.py:240,253,279,307 (paths hardcode /rest/api/2), work.py:699 (JIRA_API_VERSION default \"2\")",
+      "product": "inferred - Bearer PAT auth, /rest/api/2, `name`/`key` user identifiers and the ViewProfile.jspa PAT page are all Data Center/Server, not Cloud",
+      "pat_profile_url": "work_log.py:30-31"
+    }
+  },
+  "auth": {
+    "scheme": "bearer_pat",
+    "header_name": "Authorization",
+    "header_value_template": "Bearer {token}",
+    "token_env": "TRACKSPACE_PAT",
+    "token_env_fallbacks": ["JIRA_API_TOKEN"],
+    "request_headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json"
+    },
+    "alternate_scheme": {
+      "name": "basic",
+      "enabled_by": "JIRA_AUTH_TYPE=basic",
+      "requires_env": ["JIRA_EMAIL"],
+      "note": "Present in work.py but never exercised against this instance; Data Center PATs are used as Bearer tokens."
+    },
+    "source": {
+      "scheme": "work_log.py:231 (Authorization: Bearer <pat>), work.py:265-266",
+      "token_env": "work_log.py:27,791; work.py:12-14,697",
+      "token_env_fallbacks": "work.py:697 (falls back to JIRA_API_TOKEN)",
+      "request_headers": "work_log.py:230-234 (Accept + Content-Type), work.py:270 (Accept only)",
+      "alternate_scheme": "work.py:267-269,698"
+    }
+  },
+  "env_overrides": {
+    "TRACKSPACE_PAT": "Personal Access Token. Always present in the runtime environment. Never prompted for, never written to disk.",
+    "JIRA_API_TOKEN": "Legacy fallback token variable, read only by the visualiser.",
+    "JIRA_BASE_URL": "Overrides the instance base URL.",
+    "JIRA_AUTH_TYPE": "\"bearer\" (default) or \"basic\".",
+    "JIRA_EMAIL": "Username for basic auth only.",
+    "JIRA_API_VERSION": "REST API version segment, default \"2\".",
+    "source": "work.py:16-19,694-699; work_log.py:791"
+  },
+  "endpoints": {
+    "myself": {
+      "method": "GET",
+      "path": "/rest/api/2/myself",
+      "params": {},
+      "returns": "Single user object for the token owner.",
+      "timeout_s": 30,
+      "fixture": "myself.json",
+      "source": "work_log.py:252-255, work.py:282-283"
+    },
+    "search": {
+      "method": "GET",
+      "path": "/rest/api/2/search",
+      "params": {
+        "jql": "JQL string",
+        "fields": "comma-separated field list, e.g. \"summary\"",
+        "startAt": "0-based offset",
+        "maxResults": "page size; 100 in both scripts"
+      },
+      "returns": "{startAt, maxResults, total, issues: [{key, fields:{...}}]}",
+      "timeout_s": 60,
+      "fixture": "search_worklog_authors_page1.json",
+      "source": "work_log.py:278-293, work.py:302-319"
+    },
+    "issue_worklogs": {
+      "method": "GET",
+      "path": "/rest/api/2/issue/{issue_key}/worklog",
+      "params": {
+        "startAt": "0-based offset (visualiser only)",
+        "maxResults": "page size, 1000 in the visualiser; the scheduler sends none and takes the server default",
+        "startedAfter": "UTC epoch milliseconds; server-side lower bound on worklog.started (visualiser only)"
+      },
+      "returns": "{startAt, maxResults, total, worklogs: [...]}",
+      "timeout_s": 60,
+      "fixture": "issue_worklog_CLOPSSEC-41456.json",
+      "source": "work_log.py:306-308 (no params), work.py:321-337 (paged + startedAfter)"
+    },
+    "add_worklog": {
+      "method": "POST",
+      "path": "/rest/api/2/issue/{issue_key}/worklog",
+      "body": {
+        "timeSpentSeconds": "int, duration in seconds",
+        "started": "string, format %Y-%m-%dT%H:%M:%S.000%z (offset without colon)",
+        "comment": "plain string - v2 wire format, not Atlassian Document Format"
+      },
+      "success_status": [200, 201],
+      "returns": "The created worklog object; only `id` is consumed.",
+      "timeout_s": 30,
+      "idempotent": false,
+      "fixture": "add_worklog_created.json",
+      "source": "work_log.py:237-249"
+    },
+    "user_search": {
+      "method": "GET",
+      "path": "/rest/api/2/user/search",
+      "params": {
+        "username": "username, email or partial display name",
+        "maxResults": "2 in the visualiser"
+      },
+      "returns": "A JSON array of user objects on Data Center. The visualiser also tolerates a {values:[...]} envelope.",
+      "timeout_s": 30,
+      "fixture": "user_search.json",
+      "source": "work.py:285-300"
+    }
+  },
+  "fields": {
+    "system": {
+      "summary": {
+        "id": "summary",
+        "name": "Summary",
+        "holds": "Issue title. The only issue field either script requests.",
+        "source": "work_log.py:282,301; work.py:395,401"
+      },
+      "key": {
+        "id": "key",
+        "name": "Issue key",
+        "holds": "Issue identifier, e.g. CLOPSSEC-41456. Returned outside `fields`.",
+        "source": "work_log.py:301; work.py:400"
+      },
+      "worklog.started": {
+        "id": "started",
+        "name": "Worklog start instant",
+        "holds": "ISO-8601 timestamp with a numeric UTC offset and no colon, e.g. 2026-04-01T10:00:00.000+0200.",
+        "source": "work_log.py:239,315-324; work.py:413-416"
+      },
+      "worklog.timeSpentSeconds": {
+        "id": "timeSpentSeconds",
+        "name": "Time spent (seconds)",
+        "holds": "Integer duration. Both tools divide by 3600 to get hours.",
+        "source": "work_log.py:242,332; work.py:420"
+      },
+      "worklog.comment": {
+        "id": "comment",
+        "name": "Worklog comment",
+        "holds": "Plain string on this instance (API v2). Absent on some entries - both scripts default it to \"\".",
+        "source": "work_log.py:244,333"
+      },
+      "worklog.author": {
+        "id": "author",
+        "name": "Worklog author",
+        "holds": "User object. Identity keys seen in use: name, key, displayName, emailAddress. accountId is read defensively but is a Cloud concept.",
+        "source": "work_log.py:311-313; work.py:404-410"
+      },
+      "user.name": {
+        "id": "name",
+        "name": "Username",
+        "holds": "Data Center login name. Primary author-match key.",
+        "source": "work_log.py:264-266; work.py:363,367"
+      },
+      "user.key": {
+        "id": "key",
+        "name": "User key",
+        "holds": "Immutable Data Center user key. Second author-match key; may differ from `name` after a rename.",
+        "source": "work_log.py:264-266; work.py:368"
+      },
+      "user.displayName": {
+        "id": "displayName",
+        "name": "Display name",
+        "holds": "Human-readable name, used for report headings only.",
+        "source": "work_log.py:1362; work.py:374"
+      },
+      "user.emailAddress": {
+        "id": "emailAddress",
+        "name": "Email address",
+        "holds": "Read as a fallback identity key and label by the visualiser.",
+        "source": "work.py:369,375"
+      }
+    },
+    "custom": {},
+    "custom_fields_note": "No customfield_* id appears anywhere in either script. This instance's custom field ids are therefore UNKNOWN, not empty - the two scripts simply never touch one. Do not invent ids; add them here with provenance the first time a tool genuinely needs one.",
+    "issue_types_note": "UNKNOWN. Neither script reads, filters on, or sets an issue type.",
+    "workflow_states_note": "UNKNOWN. Neither script reads a status or performs a transition."
+  },
+  "projects": {
+    "CLOPSSEC": {
+      "key": "CLOPSSEC",
+      "known_issue": "CLOPSSEC-41456",
+      "role": "Default issue the scheduler books recurring meeting time against.",
+      "name": "UNKNOWN - the project's human-readable name never appears in either script.",
+      "source": "work_log.py:126 (AppConfig.issue_key default)"
+    },
+    "note": "Worklog searches are not project-scoped, so any project the token can see may appear in results."
+  },
+  "jql": {
+    "worklogs_by_current_user_in_range": {
+      "template": "worklogAuthor = currentUser() AND worklogDate >= \"{start_date}\" AND worklogDate <= \"{end_date}\"",
+      "params": {"start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD"},
+      "returns": "Issues carrying at least one worklog by the token owner in the range - issues, not worklogs.",
+      "source": "work_log.py:268-272; work.py:384-388"
+    },
+    "worklogs_by_named_user_in_range": {
+      "template": "worklogAuthor = \"{username}\" AND worklogDate >= \"{start_date}\" AND worklogDate <= \"{end_date}\"",
+      "params": {"username": "resolved user `name` (or accountId) from /user/search", "start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD"},
+      "returns": "Same as above for another user.",
+      "source": "work.py:363-364,384-388"
+    },
+    "constraints": {
+      "worklogDate_granularity": "Whole days only - worklogDate rejects a time component, so sub-day windows must be widened to calendar-day bounds and re-filtered client-side.",
+      "date_quoting": "Dates are passed as double-quoted ISO strings.",
+      "source": "work.py:380-388 (explicit comment), work_log.py:268-272"
+    }
+  },
+  "pagination": {
+    "style": "offset",
+    "request_params": ["startAt", "maxResults"],
+    "response_keys": ["startAt", "maxResults", "total", "<payload array>"],
+    "payload_key": {"search": "issues", "issue_worklogs": "worklogs"},
+    "page_size": {"search": 100, "issue_worklogs": 1000},
+    "termination": "Stop once startAt + <advance> >= total.",
+    "advance_strategies": {
+      "by_returned_count": {
+        "used_by": "work_log.py:290-293",
+        "note": "startAt += len(page). Correct even when the server caps maxResults below the requested size."
+      },
+      "by_requested_page_size": {
+        "used_by": "work.py:315-319,330-337",
+        "note": "startAt += page_size. Skips rows if the server ever returns fewer than requested; preserved as-is because it is proven against this instance."
+      }
+    },
+    "cursors": "No nextPageToken / cursor pagination observed. If a response ever lacks `total`, the visualiser's data.get(\"total\", 0) makes the loop terminate after one page.",
+    "source": "work_log.py:275-293; work.py:302-337"
+  },
+  "errors": {
+    "observed_handling": {
+      "401": {"meaning": "Invalid or expired PAT.", "visualiser_message": "Auth failed (401). Check TRACKSPACE_PAT.", "source": "work.py:275-276"},
+      "403": {"meaning": "Token lacks permission for the resource.", "visualiser_message": "Forbidden (403). Token lacks permission for this resource.", "source": "work.py:277-278"},
+      "other_4xx_5xx": {"handling": "requests' raise_for_status()", "source": "work.py:279; work_log.py:254,288,309"},
+      "worklog_post_failure": {"handling": "Any status outside 200/201 is reported as `HTTP {status}: {body[:200]}` and counted as a failure; the run continues.", "source": "work_log.py:247-249,1310-1316"},
+      "per_issue_fetch_failure": {"handling": "An exception while fetching one issue's worklogs is logged as `  failed {key}: {e}` and the remaining issues are still processed.", "source": "work_log.py:335-337"}
+    },
+    "body_shape": {
+      "note": "Jira Data Center error bodies are {\"errorMessages\": [...], \"errors\": {...}}. Neither script parses them - work_log.py surfaces the first 200 characters of the raw body verbatim.",
+      "source": "inferred (standard Jira DC shape); only the raw-body slicing at work_log.py:249 is confirmed"
+    },
+    "rate_limiting": {
+      "note": "UNCONFIRMED. Neither script handles 429 and no rate-limit response was ever observed. The shared client treats 429 as retryable and honours a Retry-After header if present, falling back to exponential backoff.",
+      "source": "inferred"
+    },
+    "timeouts": {"myself": 30, "search": 60, "issue_worklogs": 60, "add_worklog": 30, "visualiser_all": 30, "source": "work_log.py:246,253,286,307; work.py:274"}
+  },
+  "worklog_semantics": {
+    "started_format_out": "%Y-%m-%dT%H:%M:%S.000%z",
+    "started_format_in": "ISO-8601 with a numeric offset, no colon (e.g. +0200); a trailing Z is also tolerated by both readers.",
+    "author_filtering": "Required client-side. /issue/{key}/worklog returns every author's worklogs on that issue, so entries must be matched against the target user's name/key (scheduler) or name/key/accountId/emailAddress lowercased (visualiser).",
+    "date_filtering": "Required client-side. The JQL selects issues, not worklogs, so returned worklogs may fall outside the requested window.",
+    "hours": "timeSpentSeconds / 3600; the visualiser rounds to 3 decimals, the scheduler does not round.",
+    "source": "work_log.py:239,298-334; work.py:398-427"
+  },
+  "defaults": {
+    "timezone": "Europe/Berlin",
+    "issue_key": "CLOPSSEC-41456",
+    "config_path": "~/.jira_worklog_manager.json",
+    "dry_run": true,
+    "window": "First day of the current month through that day + 27 days.",
+    "recurring_meetings": [
+      {"weekdays": [0, 1, 2, 3, 4], "hour": 10, "minute": 0, "duration_min": 30, "comment": "Daily"},
+      {"weekdays": [1], "hour": 14, "minute": 0, "duration_min": 60, "comment": "SecOps - technical sync"},
+      {"weekdays": [4], "hour": 13, "minute": 0, "duration_min": 30, "comment": "GAC GDN"}
+    ],
+    "visualiser_window": "30d",
+    "source": "work_log.py:126-163; work.py:81"
+  }
+}

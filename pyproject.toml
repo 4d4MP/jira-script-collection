@@ -1,0 +1,89 @@
+[build-system]
+# >=83 excludes PYSEC-2026-3447, reported by pip-audit.
+requires = ["setuptools>=83"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "trackspace-tools"
+version = "1.0.0"
+description = "Internal Trackspace (Jira Data Center) automation tools sharing one client, one knowledge base and one CLI look."
+requires-python = ">=3.11"
+dependencies = [
+    "requests==2.34.2",
+    "rich==15.0.0",
+    "questionary==2.1.1",
+    "pandas==3.0.5",
+    "numpy==2.4.6",
+    "matplotlib==3.11.1",
+    "python-dateutil==2.9.0.post0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.1.1",
+    "ruff==0.16.0",
+    "mypy==2.3.0",
+    "bandit==1.9.4",
+    "pip-audit==2.10.1",
+    "types-requests==2.33.0.20260712",
+    "pandas-stubs==3.0.3.260530",
+]
+
+[project.scripts]
+trackspace-worklog-scheduler = "worklog_scheduler.schedule_and_post_worklogs:main"
+trackspace-worklog-visualizer = "worklog_visualizer.visualize_logged_worklogs:main"
+
+[tool.setuptools]
+packages = ["trackspace", "trackspace.ui", "worklog_scheduler", "worklog_visualizer"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = [".venv"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle
+    "W",
+    "F",    # pyflakes
+    "I",    # import order
+    "UP",   # pyupgrade
+    "B",    # bugbear
+    "C4",   # comprehensions
+    "SIM",  # simplify
+    "DTZ",  # naive datetimes
+    "S",    # security (flake8-bandit)
+    "PTH",  # prefer pathlib
+    "RET",
+    "RUF",
+]
+ignore = [
+    "RET504", # a named result before return often documents what is being returned
+]
+
+# These characters are deliberate typography in user-facing output (en/em dashes,
+# the prompt chevron, the middle dot separator, the truncation ellipsis).
+allowed-confusables = ["–", "—", "›", "·", "…", "’"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests assert (S101), build naive datetimes on purpose (DTZ), reach into the
+# client's sleep hook (SLF001), and carry obviously fake tokens (S105/S106).
+"tests/*" = ["S101", "S105", "S106", "DTZ001", "DTZ005", "SLF001"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+files = ["trackspace", "worklog_scheduler", "worklog_visualizer"]
+warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+module = ["questionary.*", "dateutil.*"]
+ignore_missing_imports = true
+
+[tool.bandit]
+# .venv is third-party code; tests are asserts by design (B101).
+exclude_dirs = [".venv", "tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

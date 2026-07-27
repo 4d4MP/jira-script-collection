@@ -1,0 +1,40 @@
+{
+  "_note": "Error bodies keyed by status. The shape is the standard Jira Data Center error envelope; see kb/pagination-and-errors.md - it is inferred, not witnessed. The 429 entry additionally records the Retry-After header the shared client honours when present.",
+  "401": {
+    "body": {
+      "errorMessages": ["You do not have permission to view this issue or the token is invalid."],
+      "errors": {}
+    }
+  },
+  "403": {
+    "body": {
+      "errorMessages": ["You do not have the permission to see the specified issue."],
+      "errors": {}
+    }
+  },
+  "404": {
+    "body": {
+      "errorMessages": ["Issue does not exist or you do not have permission to see it."],
+      "errors": {}
+    }
+  },
+  "429": {
+    "headers": {"Retry-After": "3"},
+    "body": {
+      "errorMessages": ["Rate limit exceeded. Please retry later."],
+      "errors": {}
+    }
+  },
+  "500": {
+    "body": {
+      "errorMessages": ["Internal server error"],
+      "errors": {}
+    }
+  },
+  "400_worklog": {
+    "body": {
+      "errorMessages": [],
+      "errors": {"timeLogged": "Invalid time entered for time spent."}
+    }
+  }
+}

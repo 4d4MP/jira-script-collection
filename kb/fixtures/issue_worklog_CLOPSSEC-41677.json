@@ -1,0 +1,37 @@
+{
+  "startAt": 0,
+  "maxResults": 20,
+  "total": 2,
+  "worklogs": [
+    {
+      "id": "900601",
+      "issueId": "616770",
+      "author": {
+        "key": "JIRAUSER10042",
+        "name": "adam.papp",
+        "displayName": "Adam Papp",
+        "emailAddress": "adam.papp@example.invalid",
+        "active": true
+      },
+      "comment": "Rule set walkthrough",
+      "started": "2026-04-14T09:00:00.000+0200",
+      "timeSpent": "2h",
+      "timeSpentSeconds": 7200
+    },
+    {
+      "id": "900602",
+      "issueId": "616770",
+      "author": {
+        "key": "JIRAUSER10077",
+        "name": "jane.doe",
+        "displayName": "Jane Doe",
+        "emailAddress": "jane.doe@example.invalid",
+        "active": true
+      },
+      "comment": "Second reviewer",
+      "started": "2026-04-14T09:00:00.000+0200",
+      "timeSpent": "2h",
+      "timeSpentSeconds": 7200
+    }
+  ]
+}

@@ -1,0 +1,52 @@
+{
+  "startAt": 0,
+  "maxResults": 20,
+  "total": 3,
+  "worklogs": [
+    {
+      "id": "900201",
+      "issueId": "615011",
+      "author": {
+        "key": "JIRAUSER10042",
+        "name": "adam.papp",
+        "displayName": "Adam Papp",
+        "emailAddress": "adam.papp@example.invalid",
+        "active": true
+      },
+      "comment": "Triage and containment",
+      "started": "2026-04-08T09:15:00.000+0200",
+      "timeSpent": "1h 30m",
+      "timeSpentSeconds": 5400
+    },
+    {
+      "id": "900202",
+      "issueId": "615011",
+      "author": {
+        "key": "JIRAUSER10042",
+        "name": "adam.papp",
+        "displayName": "Adam Papp",
+        "emailAddress": "adam.papp@example.invalid",
+        "active": true
+      },
+      "comment": "Follow-up with the account owner",
+      "started": "2026-04-09T14:00:00.000+0200",
+      "timeSpent": "45m",
+      "timeSpentSeconds": 2700
+    },
+    {
+      "id": "900203",
+      "issueId": "615011",
+      "author": {
+        "key": "JIRAUSER10042",
+        "name": "adam.papp",
+        "displayName": "Adam Papp",
+        "emailAddress": "adam.papp@example.invalid",
+        "active": true
+      },
+      "comment": "Closing notes",
+      "started": "2026-04-10T16:30:00.000+0200",
+      "timeSpent": "15m",
+      "timeSpentSeconds": 900
+    }
+  ]
+}

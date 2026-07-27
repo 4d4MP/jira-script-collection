@@ -1,0 +1,20 @@
+[
+  {
+    "self": "https://trackspace.lhsystems.com/rest/api/2/user?username=jane.doe",
+    "key": "JIRAUSER10077",
+    "name": "jane.doe",
+    "emailAddress": "jane.doe@example.invalid",
+    "displayName": "Jane Doe",
+    "active": true,
+    "timeZone": "Europe/Berlin"
+  },
+  {
+    "self": "https://trackspace.lhsystems.com/rest/api/2/user?username=jane.doerr",
+    "key": "JIRAUSER10078",
+    "name": "jane.doerr",
+    "emailAddress": "jane.doerr@example.invalid",
+    "displayName": "Jane Doerr",
+    "active": true,
+    "timeZone": "Europe/Berlin"
+  }
+]
