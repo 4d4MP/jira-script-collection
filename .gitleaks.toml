@@ -1,0 +1,28 @@
+title = "gitleaks config for jira-script-collection"
+
+[extend]
+# Start from gitleaks' built-in ruleset and only add the allowlist below.
+useDefault = true
+
+[allowlist]
+description = "Deliberate fake credentials used by the test suite (see pyproject.toml's S105/S106 per-file-ignore note for tests/)"
+
+paths = [
+  # kb/fixtures/ holds synthetic, shape-accurate fixture responses — no real
+  # instance data or credentials, per CLAUDE.md's "/kb is the source of truth"
+  # section.
+  '''kb/fixtures/.*''',
+  # tests/ intentionally hardcodes fake bearer tokens/PATs to exercise auth
+  # and redaction code paths without ever touching a real credential.
+  '''tests/.*''',
+]
+
+regexes = [
+  # Fake PAT used across tests/test_scheduler_cli.py, tests/test_visualizer.py,
+  # tests/test_client.py and tests/conftest.py to stand in for TRACKSPACE_PAT.
+  '''test-token''',
+  # Fake secrets used in tests/test_auth.py to assert that Credentials.__repr__
+  # and auth_status() never render the real token.
+  '''s3cr3t''',
+  '''s3cr3t-value''',
+]

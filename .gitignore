@@ -6,3 +6,11 @@ __pycache__/
 .ruff_cache/
 *.egg-info/
 jira_worklogs.png
+
+# Credential-shaped files (HYG-4, kb/proposals/capability-audit.md)
+.env
+*.env
+*.pem
+*.key
+credentials*
+*.p12
