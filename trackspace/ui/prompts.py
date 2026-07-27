@@ -23,18 +23,22 @@ from .theme import color_disabled
 
 T = TypeVar("T")
 
+# Hex values rather than ANSI names, for the same reason as trackspace.ui.theme:
+# they must read on a white terminal as well as a black one. Kept in step with
+# STYLES there — blue for the accent, green for a confirmed answer, mid grey for
+# anything secondary.
 _STYLE = Style(
     []
     if color_disabled()
     else [
-        ("qmark", "fg:cyan bold"),
+        ("qmark", "fg:#0087af bold"),
         ("question", "bold"),
-        ("answer", "fg:cyan bold"),
-        ("pointer", "fg:cyan bold"),
-        ("highlighted", "fg:cyan bold"),
-        ("selected", "fg:green"),
-        ("separator", "fg:#666666"),
-        ("instruction", "fg:#888888"),
+        ("answer", "fg:#0087af bold"),
+        ("pointer", "fg:#0087af bold"),
+        ("highlighted", "fg:#0087af bold"),
+        ("selected", "fg:#008700"),
+        ("separator", "fg:#808080"),
+        ("instruction", "fg:#808080"),
     ]
 )
 

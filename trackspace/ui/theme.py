@@ -23,16 +23,21 @@ from rich.theme import Theme
 
 Kind = Literal["success", "warning", "error", "info", "pending", "muted"]
 
+# Every colour here is a mid-luminance 256-colour value, chosen to stay legible
+# on a white terminal as well as a black one. The ANSI basics are avoided on
+# purpose: `yellow` and `cyan` wash out on light backgrounds, and `white` on a
+# light background is invisible — which is why `value` carries no colour at all
+# and simply inherits the terminal's foreground.
 STYLES: dict[str, str] = {
-    "success": "bold green",
-    "warning": "bold yellow",
-    "error": "bold red",
-    "info": "bold cyan",
-    "pending": "cyan",
-    "muted": "dim",
+    "success": "bold green4",
+    "warning": "bold dark_orange3",
+    "error": "bold red3",
+    "info": "bold deep_sky_blue3",
+    "pending": "deep_sky_blue3",
+    "muted": "grey50",
     "heading": "bold",
-    "value": "bold white",
-    "accent": "magenta",
+    "value": "bold",
+    "accent": "medium_purple3",
 }
 
 _UNICODE_GLYPHS: dict[str, str] = {
@@ -53,18 +58,19 @@ _ASCII_GLYPHS: dict[str, str] = {
     "muted": " ",
 }
 
-#: Palette for chart series. Distinct at a glance on both light and dark terminals.
+#: Palette for chart series: distinct from each other, and all readable against a
+#: white or a black background. Ordered so neighbouring series contrast.
 SERIES_COLORS: tuple[str, ...] = (
-    "cyan",
-    "magenta",
-    "green",
-    "yellow",
-    "blue",
-    "bright_cyan",
-    "bright_magenta",
-    "bright_green",
-    "bright_yellow",
-    "bright_blue",
+    "deep_sky_blue3",
+    "dark_orange3",
+    "green4",
+    "medium_purple3",
+    "dark_cyan",
+    "deep_pink3",
+    "gold3",
+    "steel_blue",
+    "indian_red",
+    "dark_olive_green3",
 )
 
 _RICH_THEME = Theme(STYLES)

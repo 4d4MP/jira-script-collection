@@ -162,3 +162,33 @@ def test_final_leads_with_the_outcome() -> None:
     lines = [line for line in console.export_text().splitlines() if line.strip()]
     assert lines[0].endswith("Posted 7/7 worklogs to CLOPSSEC-41456")
     assert "7 entries" in lines[1]
+
+
+def test_every_style_and_series_colour_is_valid() -> None:
+    from rich.style import Style
+
+    for name, definition in theme.STYLES.items():
+        assert Style.parse(definition), name
+    for colour in theme.SERIES_COLORS:
+        assert Style.parse(colour), colour
+
+
+def test_palette_avoids_colours_that_vanish_on_a_light_terminal() -> None:
+    """The washed-out ANSI basics and bare `white`/`dim` are what made the first
+    palette unreadable on a white background; keep them out."""
+    banned = {"white", "yellow", "cyan", "bright_yellow", "bright_cyan", "bright_white", "dim"}
+    for name, definition in theme.STYLES.items():
+        tokens = set(definition.split())
+        assert not (tokens & banned), f"{name} uses {tokens & banned}"
+    assert not set(theme.SERIES_COLORS) & banned
+
+
+def test_series_colours_are_distinct() -> None:
+    assert len(set(theme.SERIES_COLORS)) == len(theme.SERIES_COLORS)
+
+
+def test_flex_width_keeps_a_row_inside_the_terminal() -> None:
+    console = recording_console(width=80)
+    width = tables.flex_width(console, [18, 7, 7, 10, 10])
+    assert width >= 20
+    assert 18 + 7 + 7 + 10 + 10 + width <= console.width
