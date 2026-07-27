@@ -76,6 +76,7 @@ def fetch_recent_worklogs(
     start_dt: datetime,
     end_dt: datetime,
     *,
+    jql_filter: str | None = None,
     on_status: StatusCallback | None = None,
     on_warning: WarningCallback | None = None,
 ) -> tuple[pd.DataFrame, str]:
@@ -84,6 +85,15 @@ def fetch_recent_worklogs(
     Covers worklogs whose ``started`` instant lies in ``[start_dt, end_dt]``,
     using full datetime precision so sub-day windows (e.g. the last 5 minutes)
     work correctly. ``start_dt`` and ``end_dt`` must be timezone-aware.
+
+    ``jql_filter``, if given, replaces the usual ``worklogAuthor`` clause as the
+    issue-selection filter: the issue search becomes ``(jql_filter) AND
+    worklogDate >= ... AND worklogDate <= ...``. ``user_identifier`` still
+    controls whose worklogs are *counted* — the client-side author filter (KB
+    quirk #3) and the client-side instant filter (KB quirk #4) both still run
+    against ``[start_dt, end_dt]`` exactly as when ``jql_filter`` is ``None``,
+    since arbitrary caller-supplied JQL selects issues, not worklogs, and can't
+    be trusted to scope worklogs correctly on its own.
     """
     start_ms = int(start_dt.timestamp() * 1000)
 
@@ -124,15 +134,24 @@ def fetch_recent_worklogs(
     # JQL's worklogDate function only takes ISO dates (no time component),
     # so we widen to the calendar-day bounds and apply the precise datetime
     # filter in-loop after fetching individual worklog entries.
-    jql = client.kb.jql(
-        jql_pattern,
-        start_date=start_dt.date().isoformat(),
-        end_date=end_dt.date().isoformat(),
-        **jql_extra,
-    )
+    start_date = start_dt.date().isoformat()
+    end_date = end_dt.date().isoformat()
+    if jql_filter is not None:
+        # Caller-supplied JQL replaces the worklogAuthor clause but still gets
+        # ANDed onto the same worklogDate bounds the KB template would use.
+        search_jql = (
+            f'({jql_filter}) AND worklogDate >= "{start_date}" AND worklogDate <= "{end_date}"'
+        )
+    else:
+        search_jql = client.kb.jql(
+            jql_pattern,
+            start_date=start_date,
+            end_date=end_date,
+            **jql_extra,
+        )
     if on_status is not None:
         on_status(f"Searching issues for {target_label}")
-    issues = client.search_issues(jql, [client.kb.field_id("summary")])
+    issues = client.search_issues(search_jql, [client.kb.field_id("summary")])
 
     rows: list[dict[str, Any]] = []
     for i, issue in enumerate(issues, 1):

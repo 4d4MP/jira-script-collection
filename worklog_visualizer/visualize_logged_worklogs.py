@@ -109,6 +109,7 @@ class Report:
     end: datetime
     label: str
     user: str | None
+    jql: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -137,6 +138,19 @@ def _add_report_flags(parser: argparse.ArgumentParser, *, on_subcommand: bool = 
     default = argparse.SUPPRESS if on_subcommand else None
     parser.add_argument(
         "--user", default=default, help="username of another user (default: yourself)"
+    )
+    parser.add_argument(
+        "--jql",
+        default=default,
+        metavar="EXPR",
+        help=(
+            "raw JQL fragment selecting issues, replacing the worklogAuthor "
+            "clause (still ANDed with the window's worklogDate bounds: "
+            '"(EXPR) AND worklogDate >= ... AND worklogDate <= ..."). '
+            "Combines with --user: --user decides whose worklogs are counted, "
+            "--jql narrows which issues are searched — the client-side "
+            "author/instant filtering still applies exactly as without --jql."
+        ),
     )
     parser.add_argument(
         "--export",
@@ -263,6 +277,7 @@ def run_report(
             report.user,
             report.start,
             report.end,
+            jql_filter=report.jql,
             on_status=on_status,
             on_warning=on_warning,
         )
@@ -361,6 +376,7 @@ def interactive(
                 Choice("Refresh this report", "refresh"),
                 Choice(f"Time window  ({report.label})", "window"),
                 Choice(f"Whose worklogs  ({report.user or 'me'})", "user"),
+                Choice(f"Custom JQL filter  ({report.jql or 'none'})", "jql"),
                 Choice("Export…", "export"),
                 Choice("Quit", "quit"),
             ],
@@ -379,6 +395,9 @@ def interactive(
                 run_report(console, client, report, summary=summary)
             elif choice == "user":
                 report = _pick_user(console, client, report)
+                run_report(console, client, report, summary=summary)
+            elif choice == "jql":
+                report = _pick_jql(console, report)
                 run_report(console, client, report, summary=summary)
             elif choice == "export":
                 destination = Path(
@@ -490,6 +509,31 @@ def _pick_user(console: Console, client: TrackspaceClient, report: Report) -> Re
     return replace(report, user=query)
 
 
+def _pick_jql(console: Console, report: Report) -> Report:
+    choice = prompts.select(
+        "Custom JQL filter",
+        choices=[
+            Choice("None  (search by --user only)", "none"),
+            Choice("Set a custom filter…", "custom"),
+            Choice("Back", "back"),
+        ],
+        allow_back=True,
+    )
+    if prompts.is_back(choice) or choice == "back":
+        return report
+    if choice == "none":
+        return replace(report, jql=None)
+
+    value = prompts.text(
+        "JQL expression (replaces the worklogAuthor clause, "
+        "still ANDed with the window's worklogDate bounds)",
+        default=report.jql or "",
+        validate=prompts.validate_nonempty,
+    ).strip()
+    chrome.notice(console, "success", f"Filtering issues by: {value}")
+    return replace(report, jql=value)
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
@@ -503,7 +547,9 @@ def main(argv: list[str] | None = None) -> int:
         with chrome.cancellable(console, summary):
             kb = load_kb()
             start, end, label = resolve_window(args)
-            report = Report(start=start, end=end, label=label, user=args.user)
+            if args.jql is not None and not args.jql.strip():
+                raise ConfigurationError("--jql must not be empty")
+            report = Report(start=start, end=end, label=label, user=args.user, jql=args.jql)
 
             present, auth_label = auth_status(kb=kb)
             chrome.header(

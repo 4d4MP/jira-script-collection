@@ -151,6 +151,54 @@ def test_fetch_for_another_user_resolves_them_first(kb: KnowledgeBase) -> None:
     assert 'worklogAuthor = "jane.doe"' in search_call.params["jql"]
 
 
+def test_jql_filter_composes_with_worklogdate_bounds(kb: KnowledgeBase) -> None:
+    """VZ-2: --jql replaces worklogAuthor but still ANDs the window bounds."""
+    client, session = make_client(kb, fixture_router(kb))
+    start = datetime(2026, 4, 1, 0, 0, tzinfo=LOCAL)
+    end = datetime(2026, 4, 30, 23, 59, tzinfo=LOCAL)
+
+    fetch.fetch_recent_worklogs(
+        client, None, start, end, jql_filter="project = CLOPSSEC AND type = Bug"
+    )
+
+    search_call = next(call for call in session.calls if call.url.endswith("/rest/api/2/search"))
+    assert search_call.params["jql"] == (
+        '(project = CLOPSSEC AND type = Bug) AND worklogDate >= "2026-04-01" '
+        'AND worklogDate <= "2026-04-30"'
+    )
+
+
+def test_no_jql_filter_uses_the_existing_template(kb: KnowledgeBase) -> None:
+    """VZ-2: default (no --jql) behaviour is byte-identical to today's template."""
+    client, session = make_client(kb, fixture_router(kb))
+    start = datetime(2026, 4, 1, 0, 0, tzinfo=LOCAL)
+    end = datetime(2026, 4, 30, 23, 59, tzinfo=LOCAL)
+
+    fetch.fetch_recent_worklogs(client, None, start, end)
+
+    search_call = next(call for call in session.calls if call.url.endswith("/rest/api/2/search"))
+    assert search_call.params["jql"] == (
+        'worklogAuthor = currentUser() AND worklogDate >= "2026-04-01" '
+        'AND worklogDate <= "2026-04-30"'
+    )
+
+
+def test_jql_filter_still_applies_client_side_author_filtering(kb: KnowledgeBase) -> None:
+    """VZ-2 / kb/quirks.md #3: arbitrary JQL selects issues, not worklogs — the
+    client-side author filter for the current user must still exclude a
+    colleague's entries on the same issues."""
+    client, _session = make_client(kb, fixture_router(kb))
+    start = datetime(2026, 4, 1, 0, 0, tzinfo=LOCAL)
+    end = datetime(2026, 4, 30, 23, 59, tzinfo=LOCAL)
+
+    df, who = fetch.fetch_recent_worklogs(client, None, start, end, jql_filter="project = CLOPSSEC")
+
+    assert who == "Adam Papp"
+    assert set(df["author"]) == {"Adam Papp"}
+    assert "Jane Doe" not in set(df["author"])
+    assert round(float(df["hours"].sum()), 2) == 9.25
+
+
 def test_unknown_user_raises_with_the_original_message(kb: KnowledgeBase) -> None:
     client, _ = make_client(kb, fixture_router(kb))
     with pytest.raises(fetch.UserNotFoundError, match="No user found matching 'nobody'"):
@@ -384,6 +432,26 @@ def test_unknown_export_format_is_a_config_error(
     code = viz.main(["report", "--ago", "1d", "--export", str(tmp_path / "report.txt")])
     assert code == viz.EXIT_CONFIG
     assert "cannot export to report.txt" in capsys.readouterr().out
+
+
+def test_empty_jql_is_a_configuration_error(
+    monkeypatch: pytest.MonkeyPatch, kb: KnowledgeBase, capsys: Any
+) -> None:
+    """VZ-2: an empty --jql value is validated, not silently treated as unset."""
+    patch_client(monkeypatch, kb)
+    code = viz.main(["report", "--jql", ""])
+    assert code == viz.EXIT_CONFIG
+    assert "--jql must not be empty" in capsys.readouterr().out
+
+
+def test_jql_flag_survives_the_subcommand_boundary(
+    monkeypatch: pytest.MonkeyPatch, kb: KnowledgeBase
+) -> None:
+    """--jql attaches to both parsers with argparse.SUPPRESS on the subcommand,
+    so a pre-subcommand value isn't clobbered by the subparser's own default."""
+    patch_client(monkeypatch, kb)
+    code = viz.main(["--jql", "project = CLOPSSEC", "report"])
+    assert code == viz.EXIT_OK
 
 
 def test_unknown_user_exits_with_the_original_message(
