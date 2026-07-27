@@ -1,0 +1,22 @@
+[
+  {
+    "id": 20001,
+    "globalId": "system=https://github.example.invalid/lhsystems/clopssec/pull/42",
+    "application": {},
+    "object": {
+      "url": "https://github.example.invalid/lhsystems/clopssec/pull/42",
+      "title": "PR #42 - rotate service account credentials",
+      "icon": {}
+    }
+  },
+  {
+    "id": 20002,
+    "globalId": "system=https://confluence.example.invalid/pages/runbook-secops",
+    "application": {},
+    "object": {
+      "url": "https://confluence.example.invalid/pages/runbook-secops",
+      "title": "SecOps runbook",
+      "icon": {}
+    }
+  }
+]

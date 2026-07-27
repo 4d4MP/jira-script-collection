@@ -1,0 +1,32 @@
+{
+  "projects": [
+    {
+      "key": "CLOPSSEC",
+      "id": "10200",
+      "name": "Cloud Ops Security",
+      "issuetypes": [
+        {
+          "id": "3",
+          "name": "Task",
+          "subtask": false,
+          "fields": {
+            "summary": {
+              "required": true,
+              "schema": {"type": "string", "system": "summary"},
+              "name": "Summary"
+            },
+            "customfield_10001": {
+              "required": false,
+              "schema": {
+                "type": "option",
+                "custom": "com.atlassian.jira.plugin.system.customfieldtypes:select",
+                "customId": 10001
+              },
+              "name": "Team"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

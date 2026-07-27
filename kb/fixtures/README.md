@@ -23,6 +23,23 @@ scripts read and write; users, issue summaries and ids are invented. Emails use
 | `issue_worklog_malformed.json` | `GET /issue/{key}/worklog` | Missing `started`, unparseable `started`, empty `author`, missing `timeSpentSeconds`, ADF `comment` object |
 | `add_worklog_created.json` | `POST /issue/{key}/worklog` | 201 response; only `id` is consumed |
 | `errors.json` | any | 401 / 403 / 404 / 429 (+`Retry-After`) / 500 / 400-on-worklog bodies |
+| `field_list.json` | `GET /field` | System fields plus 3 custom fields (select/float/option) — **placeholder until probed** |
+| `project_CLOPSSEC.json` | `GET /project/{key}` | Project name, lead, issue types — **placeholder until probed** |
+| `issue_createmeta_CLOPSSEC.json` | `GET /issue/createmeta` | Issue types/fields creatable in `CLOPSSEC` — **placeholder until probed** |
+| `status_list.json` | `GET /status` | Global status catalogue (To Do/In Progress/Done) — **placeholder until probed** |
+| `issue_transitions_CLOPSSEC-41456.json` | `GET /issue/{key}/transitions` | Two available transitions — **placeholder until probed** |
+| `issue_get_CLOPSSEC-41456.json` | `GET /issue/{key}` | Full issue with `?expand=changelog` history and `?fields=attachment` list |
+| `mypermissions_CLOPSSEC.json` | `GET /mypermissions` | Mixed granted/denied permissions (`ADMINISTER` denied) — **placeholder until probed** |
+| `comment_list_CLOPSSEC-41456.json` | `GET /issue/{key}/comment` | Three comments, two authors, offset envelope |
+| `comment_created.json` | `POST`/`PUT /issue/{key}/comment[/{id}]` | Single created/updated comment object |
+| `attachment_get.json` | `GET /attachment/{id}` | Single attachment's metadata |
+| `attachment_created.json` | `POST /issue/{key}/attachments` | Upload response — a JSON array with one attachment |
+| `attachment_meta.json` | `GET /attachment/meta` | `{enabled, uploadLimit}` |
+| `issue_link_get.json` | `GET /issueLink/{id}` | One link with its inward/outward issues |
+| `issue_link_type_list.json` | `GET /issueLinkType` | Blocks/Cloners/Duplicate/Relates |
+| `remote_link_list_CLOPSSEC-41456.json` | `GET /issue/{key}/remotelink` | Two remote links (PR, runbook) |
+| `remote_link_created.json` | `POST /issue/{key}/remotelink` | `{id, self}` creation response |
+| `no_content.json` | `POST`/`PUT`/`DELETE` (204/no-body responses) | Empty `{}` body for transition-execute, comment-delete, attachment-delete, issue-link create/delete, remote-link delete |
 
 ## The scenario the fixtures describe
 

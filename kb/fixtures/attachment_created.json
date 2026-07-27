@@ -1,0 +1,17 @@
+[
+  {
+    "id": "10501",
+    "filename": "may-report.png",
+    "author": {
+      "key": "JIRAUSER10042",
+      "name": "adam.papp",
+      "displayName": "Adam Papp",
+      "emailAddress": "adam.papp@example.invalid",
+      "active": true
+    },
+    "created": "2026-04-27T09:05:00.000+0200",
+    "size": 23456,
+    "mimeType": "image/png",
+    "content": "https://trackspace.lhsystems.com/secure/attachment/10501/may-report.png"
+  }
+]

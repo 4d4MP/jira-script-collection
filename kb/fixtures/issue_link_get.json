@@ -1,0 +1,31 @@
+{
+  "id": "30001",
+  "type": {
+    "id": "10000",
+    "name": "Blocks",
+    "inward": "is blocked by",
+    "outward": "blocks"
+  },
+  "inwardIssue": {
+    "key": "CLOPSSEC-41501",
+    "fields": {
+      "summary": "Rotate service account credentials",
+      "status": {
+        "id": "1",
+        "name": "To Do",
+        "statusCategory": {"key": "new", "name": "To Do"}
+      }
+    }
+  },
+  "outwardIssue": {
+    "key": "CLOPSSEC-41456",
+    "fields": {
+      "summary": "Recurring meetings and internal coordination",
+      "status": {
+        "id": "3",
+        "name": "In Progress",
+        "statusCategory": {"key": "indeterminate", "name": "In Progress"}
+      }
+    }
+  }
+}

@@ -160,6 +160,98 @@ def fixture_router(
                 200, _page(kb.fixture(fixture_name), "worklogs", params), url=url, method=method
             )
 
+        if path.endswith("/field"):
+            return FakeResponse(200, kb.fixture("field_list"), url=url, method=method)
+
+        match = re.search(r"/project/([^/]+)$", path)
+        if match:
+            key = unquote(match.group(1))
+            if key == "CLOPSSEC":
+                return FakeResponse(200, kb.fixture("project_CLOPSSEC"), url=url, method=method)
+            return FakeResponse(404, kb.fixture("errors")["404"]["body"], url=url, method=method)
+
+        if path.endswith("/issue/createmeta"):
+            return FakeResponse(
+                200, kb.fixture("issue_createmeta_CLOPSSEC"), url=url, method=method
+            )
+
+        if path.endswith("/status"):
+            return FakeResponse(200, kb.fixture("status_list"), url=url, method=method)
+
+        if path.endswith("/mypermissions"):
+            return FakeResponse(200, kb.fixture("mypermissions_CLOPSSEC"), url=url, method=method)
+
+        match = re.search(r"/issue/([^/]+)/transitions$", path)
+        if match:
+            if method == "POST":
+                return FakeResponse(204, None, url=url, method=method, text="")
+            return FakeResponse(
+                200, kb.fixture("issue_transitions_CLOPSSEC-41456"), url=url, method=method
+            )
+
+        match = re.search(r"/issue/([^/]+)/comment/([^/]+)$", path)
+        if match:
+            if method == "PUT":
+                return FakeResponse(200, kb.fixture("comment_created"), url=url, method=method)
+            if method == "DELETE":
+                return FakeResponse(204, None, url=url, method=method, text="")
+
+        match = re.search(r"/issue/([^/]+)/comment$", path)
+        if match:
+            if method == "POST":
+                return FakeResponse(201, kb.fixture("comment_created"), url=url, method=method)
+            return FakeResponse(
+                200,
+                _page(kb.fixture("comment_list_CLOPSSEC-41456"), "comments", params),
+                url=url,
+                method=method,
+            )
+
+        if method == "POST" and re.search(r"/issue/([^/]+)/attachments$", path):
+            return FakeResponse(200, kb.fixture("attachment_created"), url=url, method=method)
+
+        if path.endswith("/attachment/meta"):
+            return FakeResponse(200, kb.fixture("attachment_meta"), url=url, method=method)
+
+        match = re.search(r"/attachment/([^/]+)$", path)
+        if match:
+            if method == "DELETE":
+                return FakeResponse(204, None, url=url, method=method, text="")
+            return FakeResponse(200, kb.fixture("attachment_get"), url=url, method=method)
+
+        if path.endswith("/issueLinkType"):
+            return FakeResponse(200, kb.fixture("issue_link_type_list"), url=url, method=method)
+
+        if method == "POST" and path.endswith("/issueLink"):
+            return FakeResponse(201, kb.fixture("no_content"), url=url, method=method)
+
+        match = re.search(r"/issueLink/([^/]+)$", path)
+        if match:
+            if method == "DELETE":
+                return FakeResponse(204, None, url=url, method=method, text="")
+            return FakeResponse(200, kb.fixture("issue_link_get"), url=url, method=method)
+
+        match = re.search(r"/issue/([^/]+)/remotelink/([^/]+)$", path)
+        if match:
+            return FakeResponse(204, None, url=url, method=method, text="")
+
+        match = re.search(r"/issue/([^/]+)/remotelink$", path)
+        if match:
+            if method == "POST":
+                return FakeResponse(201, kb.fixture("remote_link_created"), url=url, method=method)
+            return FakeResponse(
+                200, kb.fixture("remote_link_list_CLOPSSEC-41456"), url=url, method=method
+            )
+
+        match = re.search(r"/issue/([^/]+)$", path)
+        if match:
+            key = unquote(match.group(1))
+            if key == "CLOPSSEC-41456":
+                return FakeResponse(
+                    200, kb.fixture("issue_get_CLOPSSEC-41456"), url=url, method=method
+                )
+            return FakeResponse(404, kb.fixture("errors")["404"]["body"], url=url, method=method)
+
         return FakeResponse(404, kb.fixture("errors")["404"]["body"], url=url, method=method)
 
     return handler

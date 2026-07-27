@@ -1,0 +1,13 @@
+{
+  "id": "10200",
+  "author": {
+    "key": "JIRAUSER10042",
+    "name": "adam.papp",
+    "displayName": "Adam Papp",
+    "emailAddress": "adam.papp@example.invalid",
+    "active": true
+  },
+  "body": "Logged 0.5h via Trackspace",
+  "created": "2026-04-27T09:00:00.000+0200",
+  "updated": "2026-04-27T09:00:00.000+0200"
+}

@@ -1,0 +1,33 @@
+{
+  "self": "https://trackspace.lhsystems.com/rest/api/2/project/10200",
+  "id": "10200",
+  "key": "CLOPSSEC",
+  "name": "Cloud Ops Security",
+  "lead": {
+    "self": "https://trackspace.lhsystems.com/rest/api/2/user?username=adam.papp",
+    "key": "JIRAUSER10042",
+    "name": "adam.papp",
+    "displayName": "Adam Papp",
+    "active": true
+  },
+  "issueTypes": [
+    {
+      "id": "3",
+      "name": "Task",
+      "subtask": false,
+      "description": "A task that needs to be done - placeholder until probed"
+    },
+    {
+      "id": "10400",
+      "name": "Incident",
+      "subtask": false,
+      "description": "An operational security incident - placeholder until probed"
+    },
+    {
+      "id": "5",
+      "name": "Sub-task",
+      "subtask": true,
+      "description": "The sub-task of an issue - placeholder until probed"
+    }
+  ]
+}

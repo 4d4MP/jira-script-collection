@@ -1,0 +1,17 @@
+[
+  {
+    "id": "1",
+    "name": "To Do",
+    "statusCategory": {"key": "new", "name": "To Do"}
+  },
+  {
+    "id": "3",
+    "name": "In Progress",
+    "statusCategory": {"key": "indeterminate", "name": "In Progress"}
+  },
+  {
+    "id": "10001",
+    "name": "Done",
+    "statusCategory": {"key": "done", "name": "Done"}
+  }
+]

@@ -114,6 +114,266 @@
       "timeout_s": 30,
       "fixture": "user_search.json",
       "source": "work.py:285-300"
+    },
+    "field_list": {
+      "method": "GET",
+      "path": "/rest/api/2/field",
+      "params": {},
+      "returns": "JSON array of all fields (system and custom) visible to the token owner, each with id, name, custom, orderable, navigable, searchable, clauseNames, schema.",
+      "timeout_s": 30,
+      "fixture": "field_list.json",
+      "source": "capability-audit NT-1 (public Jira DC REST v2 surface; path/method are static knowledge, response shape unverified until probed)"
+    },
+    "project_get": {
+      "method": "GET",
+      "path": "/rest/api/2/project/{project_key}",
+      "params": {},
+      "returns": "Single project object: self, id, key, name, lead, issueTypes.",
+      "timeout_s": 30,
+      "fixture": "project_CLOPSSEC.json",
+      "source": "capability-audit NT-1 (public Jira DC REST v2 surface; path/method are static knowledge, response shape unverified until probed)"
+    },
+    "issue_createmeta": {
+      "method": "GET",
+      "path": "/rest/api/2/issue/createmeta",
+      "params": {
+        "projectKeys": "comma-separated project keys to scope the response",
+        "expand": "\"projects.issuetypes.fields\" to include the per-issue-type field schema"
+      },
+      "returns": "{projects: [{key, issuetypes: [{id, name, fields: {...}}]}]} - the subset of issue types/fields the token owner can actually create.",
+      "timeout_s": 30,
+      "fixture": "issue_createmeta_CLOPSSEC.json",
+      "source": "capability-audit NT-1 (public Jira DC REST v2 surface; path/method are static knowledge, response shape unverified until probed)"
+    },
+    "status_list": {
+      "method": "GET",
+      "path": "/rest/api/2/status",
+      "params": {},
+      "returns": "JSON array of every global status: id, name, statusCategory.",
+      "timeout_s": 30,
+      "fixture": "status_list.json",
+      "source": "capability-audit NT-1 (public Jira DC REST v2 surface; path/method are static knowledge, response shape unverified until probed)"
+    },
+    "issue_transitions": {
+      "method": "GET",
+      "path": "/rest/api/2/issue/{issue_key}/transitions",
+      "params": {
+        "expand": "\"transitions.fields\" to include field requirements per transition"
+      },
+      "returns": "{expand, transitions: [{id, name, to: {id, name, statusCategory}}]} - the transitions available to the token owner from the issue's current status.",
+      "timeout_s": 30,
+      "fixture": "issue_transitions_CLOPSSEC-41456.json",
+      "source": "capability-audit NT-1 (public Jira DC REST v2 surface; path/method are static knowledge, response shape unverified until probed)"
+    },
+    "transition_execute": {
+      "method": "POST",
+      "path": "/rest/api/2/issue/{issue_key}/transitions",
+      "body": {
+        "transition": "{\"id\": \"<transition id from issue_transitions>\"}",
+        "update": "optional {\"comment\": [...]} block"
+      },
+      "success_status": [204],
+      "returns": "No content on success.",
+      "timeout_s": 30,
+      "idempotent": false,
+      "fixture": "no_content.json",
+      "note": "execute path gated: no tool code until a probe run records a real transition graph (capability-audit sequencing)",
+      "source": "capability-audit NT-2 (public Jira DC REST v2 surface; path/method are static knowledge, response shape unverified until probed)"
+    },
+    "issue_get": {
+      "method": "GET",
+      "path": "/rest/api/2/issue/{issue_key}",
+      "params": {
+        "expand": "e.g. \"changelog\" to embed issue history - there is no dedicated changelog endpoint on Data Center",
+        "fields": "e.g. \"attachment\" to scope the response - there is no dedicated list-attachments endpoint on Data Center"
+      },
+      "returns": "Full issue object; shape depends on `fields`/`expand`. With expand=changelog: adds changelog.histories[]. With fields=attachment: fields.attachment[] is the attachment list.",
+      "timeout_s": 30,
+      "fixture": "issue_get_CLOPSSEC-41456.json",
+      "source": "capability-audit NT-6 (public Jira DC REST v2 surface; path/method are static knowledge, response shape unverified until probed)"
+    },
+    "my_permissions": {
+      "method": "GET",
+      "path": "/rest/api/2/mypermissions",
+      "params": {},
+      "returns": "{permissions: {PERMISSION_KEY: {id, key, name, havePermission}}} for the token owner. Unlike Jira Cloud, Data Center does not require a `permissions=` filter param.",
+      "timeout_s": 30,
+      "fixture": "mypermissions_CLOPSSEC.json",
+      "source": "capability-audit NT-1 (public Jira DC REST v2 surface; path/method are static knowledge, response shape unverified until probed)"
+    },
+    "comment_list": {
+      "method": "GET",
+      "path": "/rest/api/2/issue/{issue_key}/comment",
+      "params": {
+        "startAt": "0-based offset",
+        "maxResults": "page size"
+      },
+      "returns": "{startAt, maxResults, total, comments: [{id, author, body, created, updated}]}",
+      "timeout_s": 30,
+      "fixture": "comment_list_CLOPSSEC-41456.json",
+      "source": "capability-audit NT-3 (public Jira DC REST v2 surface; path/method are static knowledge, response shape unverified until probed)"
+    },
+    "comment_add": {
+      "method": "POST",
+      "path": "/rest/api/2/issue/{issue_key}/comment",
+      "body": {
+        "body": "plain string - v2 wire format, not Atlassian Document Format, matching the existing worklog-comment convention"
+      },
+      "success_status": [201],
+      "returns": "The created comment object.",
+      "timeout_s": 30,
+      "idempotent": false,
+      "fixture": "comment_created.json",
+      "source": "capability-audit NT-3 (public Jira DC REST v2 surface; path/method are static knowledge, response shape unverified until probed)"
+    },
+    "comment_update": {
+      "method": "PUT",
+      "path": "/rest/api/2/issue/{issue_key}/comment/{comment_id}",
+      "body": {
+        "body": "plain string replacing the comment body"
+      },
+      "success_status": [200],
+      "returns": "The updated comment object.",
+      "timeout_s": 30,
+      "idempotent": true,
+      "fixture": "comment_created.json",
+      "source": "capability-audit NT-3 (public Jira DC REST v2 surface; path/method are static knowledge, response shape unverified until probed)"
+    },
+    "comment_delete": {
+      "method": "DELETE",
+      "path": "/rest/api/2/issue/{issue_key}/comment/{comment_id}",
+      "params": {},
+      "success_status": [204],
+      "returns": "No content on success.",
+      "timeout_s": 30,
+      "idempotent": true,
+      "fixture": "no_content.json",
+      "source": "capability-audit NT-3 (public Jira DC REST v2 surface; path/method are static knowledge, response shape unverified until probed)"
+    },
+    "attachment_upload": {
+      "method": "POST",
+      "path": "/rest/api/2/issue/{issue_key}/attachments",
+      "body": {
+        "file": "multipart/form-data field named \"file\" containing the attachment content"
+      },
+      "headers": {
+        "X-Atlassian-Token": "no-check"
+      },
+      "success_status": [200],
+      "returns": "JSON array containing the created attachment object.",
+      "timeout_s": 30,
+      "idempotent": false,
+      "fixture": "attachment_created.json",
+      "source": "capability-audit NT-4 (public Jira DC REST v2 surface; path/method are static knowledge, response shape unverified until probed)"
+    },
+    "attachment_get": {
+      "method": "GET",
+      "path": "/rest/api/2/attachment/{attachment_id}",
+      "params": {},
+      "returns": "Single attachment object: id, filename, author, created, size, mimeType, content (download URL).",
+      "timeout_s": 30,
+      "fixture": "attachment_get.json",
+      "source": "capability-audit NT-4 (public Jira DC REST v2 surface; path/method are static knowledge, response shape unverified until probed)"
+    },
+    "attachment_delete": {
+      "method": "DELETE",
+      "path": "/rest/api/2/attachment/{attachment_id}",
+      "params": {},
+      "success_status": [204],
+      "returns": "No content on success.",
+      "timeout_s": 30,
+      "idempotent": true,
+      "fixture": "no_content.json",
+      "source": "capability-audit NT-4 (public Jira DC REST v2 surface; path/method are static knowledge, response shape unverified until probed)"
+    },
+    "attachment_meta": {
+      "method": "GET",
+      "path": "/rest/api/2/attachment/meta",
+      "params": {},
+      "returns": "{enabled, uploadLimit} - whether attachments are enabled instance-wide and the max upload size in bytes.",
+      "timeout_s": 30,
+      "fixture": "attachment_meta.json",
+      "source": "capability-audit NT-4 (public Jira DC REST v2 surface; path/method are static knowledge, response shape unverified until probed)"
+    },
+    "issue_link_create": {
+      "method": "POST",
+      "path": "/rest/api/2/issueLink",
+      "body": {
+        "type": "{\"name\": \"<issue link type name from issue_link_types>\"}",
+        "inwardIssue": "{\"key\": \"...\"}",
+        "outwardIssue": "{\"key\": \"...\"}"
+      },
+      "success_status": [201],
+      "returns": "No content on success.",
+      "timeout_s": 30,
+      "idempotent": false,
+      "fixture": "no_content.json",
+      "source": "capability-audit NT-5 (public Jira DC REST v2 surface; path/method are static knowledge, response shape unverified until probed)"
+    },
+    "issue_link_get": {
+      "method": "GET",
+      "path": "/rest/api/2/issueLink/{link_id}",
+      "params": {},
+      "returns": "{id, type: {id, name, inward, outward}, inwardIssue, outwardIssue}",
+      "timeout_s": 30,
+      "fixture": "issue_link_get.json",
+      "source": "capability-audit NT-5 (public Jira DC REST v2 surface; path/method are static knowledge, response shape unverified until probed)"
+    },
+    "issue_link_delete": {
+      "method": "DELETE",
+      "path": "/rest/api/2/issueLink/{link_id}",
+      "params": {},
+      "success_status": [204],
+      "returns": "No content on success.",
+      "timeout_s": 30,
+      "idempotent": true,
+      "fixture": "no_content.json",
+      "source": "capability-audit NT-5 (public Jira DC REST v2 surface; path/method are static knowledge, response shape unverified until probed)"
+    },
+    "issue_link_types": {
+      "method": "GET",
+      "path": "/rest/api/2/issueLinkType",
+      "params": {},
+      "returns": "{issueLinkTypes: [{id, name, inward, outward}]} - valid type.name values for issue_link_create.",
+      "timeout_s": 30,
+      "fixture": "issue_link_type_list.json",
+      "source": "capability-audit NT-5 (public Jira DC REST v2 surface; path/method are static knowledge, response shape unverified until probed)"
+    },
+    "remote_link_list": {
+      "method": "GET",
+      "path": "/rest/api/2/issue/{issue_key}/remotelink",
+      "params": {},
+      "returns": "JSON array of remote link objects: id, globalId, application, object: {url, title, icon}.",
+      "timeout_s": 30,
+      "fixture": "remote_link_list_CLOPSSEC-41456.json",
+      "source": "capability-audit NT-5 (public Jira DC REST v2 surface; path/method are static knowledge, response shape unverified until probed)"
+    },
+    "remote_link_create": {
+      "method": "POST",
+      "path": "/rest/api/2/issue/{issue_key}/remotelink",
+      "body": {
+        "globalId": "optional caller-supplied id",
+        "application": "optional {name, type}",
+        "object": "{url, title, icon}"
+      },
+      "success_status": [201],
+      "returns": "{id, self}",
+      "timeout_s": 30,
+      "idempotent": false,
+      "note": "supports an idempotent globalId: re-POSTing an existing globalId updates the same remote link instead of duplicating it",
+      "fixture": "remote_link_created.json",
+      "source": "capability-audit NT-5 (public Jira DC REST v2 surface; path/method are static knowledge, response shape unverified until probed)"
+    },
+    "remote_link_delete": {
+      "method": "DELETE",
+      "path": "/rest/api/2/issue/{issue_key}/remotelink/{link_id}",
+      "params": {},
+      "success_status": [204],
+      "returns": "No content on success.",
+      "timeout_s": 30,
+      "idempotent": true,
+      "fixture": "no_content.json",
+      "source": "capability-audit NT-5 (public Jira DC REST v2 surface; path/method are static knowledge, response shape unverified until probed)"
     }
   },
   "fields": {
@@ -217,8 +477,8 @@
     "style": "offset",
     "request_params": ["startAt", "maxResults"],
     "response_keys": ["startAt", "maxResults", "total", "<payload array>"],
-    "payload_key": {"search": "issues", "issue_worklogs": "worklogs"},
-    "page_size": {"search": 100, "issue_worklogs": 1000},
+    "payload_key": {"search": "issues", "issue_worklogs": "worklogs", "comment_list": "comments"},
+    "page_size": {"search": 100, "issue_worklogs": 1000, "comment_list": 50},
     "termination": "Stop once startAt + <advance> >= total.",
     "advance_strategies": {
       "by_returned_count": {

@@ -19,7 +19,10 @@ def test_instance_facts(kb: KnowledgeBase) -> None:
 def test_every_endpoint_renders_and_has_a_fixture(kb: KnowledgeBase) -> None:
     for name in kb.endpoint_names():
         endpoint = kb.endpoint(name)
-        assert endpoint.method in {"GET", "POST"}
+        # PUT/DELETE are legitimate for the comment/attachment/link companion
+        # endpoints (update-in-place and remove operations); GET/POST alone no
+        # longer cover the full surface.
+        assert endpoint.method in {"GET", "POST", "PUT", "DELETE"}
         assert endpoint.timeout_s > 0
         assert endpoint.fixture, f"{name} has no offline fixture"
         # Fixture names in the KB point at real files, sometimes via a sibling.
