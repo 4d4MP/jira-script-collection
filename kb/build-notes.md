@@ -103,10 +103,20 @@ LIB-10, HYG-1..5. One lesson per item as it lands. Specs live in
   comment/author, empty strings for uncollected fields, schema marker
   `trackspace-worklog-rows/1`) let both pinned export tests stay untouched.
   `read_canonical` exists so future replay work starts from a validated shape.
-- **HYG-1**: the first real CI run caught a real bug — the
-  `types-python-dateutil` pin named a version that was never published (written
-  from memory instead of `pip list`). Fixed in a01fd02. Lesson: pins go in from
-  `pip list --format=freeze`, never typed by hand.
+- **HYG-1**: the first real CI runs caught three real bugs, one per gate step
+  they unblocked, none reproducible in the build sandbox:
+  1. the `types-python-dateutil` pin named a version that was never published
+     (written from memory instead of `pip list`) — fixed in a01fd02. Pins go
+     in from `pip list --format=freeze`, never typed by hand.
+  2. `pip-audit` audits the whole environment, and the hosted runner ships a
+     setuptools old enough to carry PYSEC-2026-3447 — fixed in a7e068f by
+     upgrading pip/setuptools in the install step (at the source, not by
+     ignoring the advisory).
+  3. test modules import helpers as `tests.conftest`, which only resolves with
+     the repo root on sys.path; `python -m pytest` adds it implicitly, bare
+     `pytest` (what CI runs) does not — fixed in f88c9fe with pytest's
+     `pythonpath = ["."]` so both invocation styles work.
+  The pipeline went green end-to-end at f88c9fe (run 30298050553).
 - **HYG-2/3/4**: config-only; pre-commit/gitleaks binaries aren't in this
   sandbox, so those run unverified until someone executes them locally or the
   gitleaks hook fires in pre-commit.
