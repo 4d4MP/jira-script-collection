@@ -27,6 +27,7 @@ import sys
 from collections.abc import Sequence
 from datetime import date
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from rich.console import Console
 
@@ -38,12 +39,14 @@ from trackspace.ui import chrome, prompts, tables
 from trackspace.ui.prompts import Choice
 
 from . import dashboard as dash
+from . import ics
 from .clock import today_local
 from .config import CONFIG_PATH, WEEKDAY_NAMES, OneOffMeeting, RecurringMeeting, ScheduleConfig
 from .schedule import (
     QUICK_RANGES,
     WorklogEntry,
     build_entries,
+    export_entries,
     parse_iso_date,
     parse_oneoff_spec,
     parse_recurring_spec,
@@ -76,6 +79,17 @@ def build_parser() -> argparse.ArgumentParser:
 
     preview = subparsers.add_parser("preview", help="show the entries the schedule implies")
     _add_schedule_flags(preview, on_subcommand=True)
+    preview.add_argument(
+        "--explain",
+        action="store_true",
+        help="annotate each row with the rule that produced it",
+    )
+    preview.add_argument(
+        "--export",
+        type=Path,
+        metavar="PATH",
+        help="also write the planned schedule to a .csv, .json or .ics file",
+    )
 
     submit = subparsers.add_parser("submit", help="post the entries to Trackspace")
     _add_schedule_flags(submit, on_subcommand=True)
@@ -94,6 +108,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         metavar="PATH",
         help="also write the fetched worklogs to a .json or .csv file",
+    )
+    board.add_argument(
+        "--target-hours-per-day",
+        type=float,
+        metavar="N",
+        help="also show a target-vs-actual panel for N hours per weekday in range",
     )
 
     config = subparsers.add_parser("config", help="show, export or load the saved config")
@@ -136,6 +156,23 @@ def _add_schedule_flags(parser: argparse.ArgumentParser, *, on_subcommand: bool 
         help="skip a date; repeatable",
     )
     group.add_argument(
+        "--exclude-file",
+        type=Path,
+        default=default,
+        metavar="PATH",
+        help=(
+            "merge in excluded dates from a file — one YYYY-MM-DD per line "
+            "(# comments allowed) or a .ics calendar"
+        ),
+    )
+    group.add_argument(
+        "--import-ics",
+        type=Path,
+        default=default,
+        metavar="PATH",
+        help="append each VEVENT in an .ics file as a one-off meeting",
+    )
+    group.add_argument(
         "--recurring",
         action="append",
         default=default,
@@ -155,8 +192,22 @@ def _add_schedule_flags(parser: argparse.ArgumentParser, *, on_subcommand: bool 
     )
 
 
-def apply_flags(cfg: ScheduleConfig, args: argparse.Namespace) -> None:
-    """Overlay command-line flags onto the loaded config."""
+def _schedule_zone(cfg: ScheduleConfig) -> ZoneInfo:
+    """The timezone ``.ics`` imports (SC-8, SC-10) resolve naive times into."""
+    try:
+        return ZoneInfo(cfg.timezone)
+    except (ZoneInfoNotFoundError, ValueError) as exc:
+        raise ConfigurationError(f"unknown timezone {cfg.timezone!r}") from exc
+
+
+def apply_flags(cfg: ScheduleConfig, args: argparse.Namespace) -> list[str]:
+    """Overlay command-line flags onto the loaded config.
+
+    Returns any warning lines produced along the way (currently only SC-10's
+    "all-day event skipped" notices), for the caller to print once the header
+    (and thus the console) exists.
+    """
+    warnings: list[str] = []
     if getattr(args, "issue", None):
         cfg.issue_key = args.issue.strip()
     if getattr(args, "base_url", None):
@@ -174,14 +225,51 @@ def apply_flags(cfg: ScheduleConfig, args: argparse.Namespace) -> None:
         cfg.exclude_dates = sorted(
             {parse_iso_date(value, "--exclude").isoformat() for value in args.exclude}
         )
+    if getattr(args, "exclude_file", None):
+        # SC-8: merges into cfg.exclude_dates via the existing add_exclusion()
+        # dedupe-and-sort path, on top of whatever --exclude already set.
+        for day in ics.read_exclude_dates(args.exclude_file, _schedule_zone(cfg)):
+            cfg.add_exclusion(day)
     if getattr(args, "recurring", None):
         cfg.recurring = [parse_recurring_spec(spec) for spec in args.recurring]
     if getattr(args, "oneoff", None):
         cfg.oneoffs.extend(parse_oneoff_spec(spec) for spec in args.oneoff)
         cfg.sort_oneoffs()
+    if getattr(args, "import_ics", None):
+        warnings.extend(_import_ics(cfg, args.import_ics))
     dry_run = getattr(args, "dry_run", None)
     if dry_run is not None:
         cfg.dry_run = bool(dry_run)
+    return warnings
+
+
+def _import_ics(cfg: ScheduleConfig, path: Path) -> list[str]:
+    """SC-10: append each VEVENT in ``path`` as a one-off meeting.
+
+    All-day (``VALUE=DATE``) events have no time to book against, so they are
+    skipped with a warning rather than guessed at.
+    """
+    warnings: list[str] = []
+    events = ics.read_ics_file(path, _schedule_zone(cfg))
+    imported: list[OneOffMeeting] = []
+    for event in events:
+        if event.all_day:
+            warnings.append(
+                f"skipped all-day .ics event {event.summary!r} ({event.dtstart.date()})"
+            )
+            continue
+        imported.append(
+            OneOffMeeting(
+                date=event.dtstart.date().isoformat(),
+                hour=event.dtstart.hour,
+                minute=event.dtstart.minute,
+                duration_min=event.duration_min or 30,
+                comment=event.summary,
+            )
+        )
+    cfg.oneoffs.extend(imported)
+    cfg.sort_oneoffs()
+    return warnings
 
 
 # ---------------------------------------------------------------------------
@@ -204,29 +292,41 @@ def print_header(console: Console, cfg: ScheduleConfig) -> bool:
     return present
 
 
-def print_preview(console: Console, entries: Sequence[WorklogEntry]) -> None:
+def print_preview(
+    console: Console, entries: Sequence[WorklogEntry], *, explain: bool = False
+) -> None:
     if not entries:
         tables.empty_notice(console, "No entries match the current configuration.")
         return
+    # SC-18: --explain adds one extra column; the default table is untouched,
+    # which is what test_preview_lists_entries_and_posts_nothing pins.
+    columns = [
+        tables.Column("Date", width=10),
+        tables.Column("Day", width=3),
+        tables.Column("Time", width=5),
+        tables.Column("Duration", width=8, justify="right"),
+    ]
+    fixed_widths = [10, 3, 5, 8]
+    if explain:
+        columns.append(tables.Column("Source", width=28))
+        fixed_widths.append(28)
+    columns.append(tables.Column("Comment", width=tables.flex_width(console, fixed_widths)))
+
+    def row(entry: WorklogEntry) -> tuple[str, ...]:
+        base = (
+            f"{entry.started:%Y-%m-%d}",
+            f"{entry.started:%a}",
+            f"{entry.started:%H:%M}",
+            f"{entry.duration_min} min",
+        )
+        if explain:
+            return (*base, entry.source, entry.comment)
+        return (*base, entry.comment)
+
     tables.render_table(
         console,
-        [
-            tables.Column("Date", width=10),
-            tables.Column("Day", width=3),
-            tables.Column("Time", width=5),
-            tables.Column("Duration", width=8, justify="right"),
-            tables.Column("Comment", width=tables.flex_width(console, [10, 3, 5, 8])),
-        ],
-        [
-            (
-                f"{entry.started:%Y-%m-%d}",
-                f"{entry.started:%a}",
-                f"{entry.started:%H:%M}",
-                f"{entry.duration_min} min",
-                entry.comment,
-            )
-            for entry in entries
-        ],
+        columns,
+        [row(entry) for entry in entries],
         title="Planned worklogs",
         caption=_totals_line(list(entries)),
     )
@@ -297,18 +397,24 @@ def make_client(cfg: ScheduleConfig) -> TrackspaceClient:
 # ---------------------------------------------------------------------------
 # Commands
 # ---------------------------------------------------------------------------
-def do_preview(console: Console, cfg: ScheduleConfig) -> int:
+def do_preview(
+    console: Console, cfg: ScheduleConfig, *, explain: bool = False, export_path: Path | None = None
+) -> int:
     entries = build_entries(cfg)
-    print_preview(console, entries)
+    print_preview(console, entries, explain=explain)
     if entries:
+        details = [
+            _totals_line(entries),
+            "Nothing has been posted — run `submit --live` when the preview looks right.",
+        ]
+        if export_path is not None:
+            export_entries(entries, export_path, issue_key=cfg.issue_key)
+            details.append(f"Written to {export_path}")
         chrome.final(
             console,
             "info",
             f"{len(entries)} worklogs planned for {cfg.issue_key}",
-            details=[
-                _totals_line(entries),
-                "Nothing has been posted — run `submit --live` when the preview looks right.",
-            ],
+            details=details,
         )
     else:
         chrome.final(
@@ -433,6 +539,7 @@ def do_dashboard(
     *,
     export_path: Path | None,
     summary: chrome.RunSummary,
+    target_hours_per_day: float | None = None,
 ) -> int:
     start = parse_iso_date(cfg.start_date, "start date")
     end = parse_iso_date(cfg.end_date, "end date")
@@ -463,6 +570,15 @@ def do_dashboard(
     summary.replace("worklogs", len(records))
     data = dash.aggregate(records, start, end)
     dash.render(console, data, username=identity.display_name)
+
+    # SC-19: opt-in only — a separate panel, never merged into _summary_rows().
+    if target_hours_per_day is not None:
+        console.print()
+        console.print(
+            chrome.key_value_panel(
+                "Target vs actual", dash.target_rows(data, target_hours_per_day), console
+            )
+        )
 
     details: list[str] = []
     if export_path is not None:
@@ -832,10 +948,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             load_kb()  # fail fast and loudly if the knowledge base is unreachable
             config_path = Path(args.config).expanduser()
             cfg = ScheduleConfig.load(config_path)
-            apply_flags(cfg, args)
+            flag_warnings = apply_flags(cfg, args)
             save_on_exit = not args.no_save
 
             print_header(console, cfg)
+            for message in flag_warnings:
+                chrome.notice(console, "warning", message)
 
             command = args.command
             if command is None:
@@ -855,7 +973,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 return do_preview(console, cfg)
 
             if command == "preview":
-                return do_preview(console, cfg)
+                return do_preview(console, cfg, explain=args.explain, export_path=args.export)
             if command == "submit":
                 code = do_submit(console, cfg, assume_yes=args.yes, summary=summary)
                 if save_on_exit:
@@ -864,7 +982,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                     do_dashboard(console, cfg, export_path=None, summary=summary)
                 return code
             if command == "dashboard":
-                return do_dashboard(console, cfg, export_path=args.export, summary=summary)
+                return do_dashboard(
+                    console,
+                    cfg,
+                    export_path=args.export,
+                    summary=summary,
+                    target_hours_per_day=args.target_hours_per_day,
+                )
             if command == "config":
                 return do_config(console, cfg, args, config_path)
             parser.error(f"unknown command {command!r}")  # pragma: no cover - argparse guards

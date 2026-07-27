@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
 
 from trackspace.errors import ConfigurationError
 from trackspace.kb import KnowledgeBase
 from worklog_scheduler.config import OneOffMeeting, RecurringMeeting, ScheduleConfig
+from worklog_scheduler.ics import parse_ics
 from worklog_scheduler.schedule import (
     build_entries,
     parse_oneoff_spec,
@@ -330,3 +332,205 @@ def test_interval_fields_survive_a_round_trip(kb: KnowledgeBase, tmp_path: Path)
     path = tmp_path / "config.json"
     cfg.save(path)
     assert ScheduleConfig.load(path, kb) == cfg
+
+
+# ---- SC-7: per-meeting blackout dates --------------------------------------
+def test_skip_dates_cancel_only_that_meeting(kb: KnowledgeBase) -> None:
+    cfg = april(kb)
+    # Daily standup skips the 2nd; the other recurring meetings on that day
+    # (none here, but the GAC/sync ones on other days) are unaffected.
+    cfg.recurring = [
+        RecurringMeeting([0, 1, 2, 3, 4], 10, 0, 30, "Daily", skip_dates=["2026-04-02"]),
+        RecurringMeeting([3], 13, 0, 30, "Sync"),  # 2026-04-02 is a Thursday
+    ]
+    entries = build_entries(cfg)
+    days_with_daily = {e.day.isoformat() for e in entries if e.comment == "Daily"}
+    days_with_sync = {e.day.isoformat() for e in entries if e.comment == "Sync"}
+    assert "2026-04-02" not in days_with_daily
+    # The other meeting still fires that day — skip_dates is per-meeting only.
+    assert "2026-04-02" in days_with_sync
+
+
+def test_skip_dates_default_to_empty(kb: KnowledgeBase) -> None:
+    assert RecurringMeeting([0], 9, 0, 30, "x").skip_dates == []
+
+
+def test_skip_dates_survive_a_round_trip(kb: KnowledgeBase, tmp_path: Path) -> None:
+    cfg = ScheduleConfig.defaults(kb, today=date(2026, 7, 15))
+    cfg.recurring.append(
+        RecurringMeeting([1], 15, 0, 60, "Internal sync", skip_dates=["2026-07-21", "2026-07-28"])
+    )
+    path = tmp_path / "config.json"
+    cfg.save(path)
+    loaded = ScheduleConfig.load(path, kb)
+    assert loaded == cfg
+    assert loaded.recurring[-1].skip_dates == ["2026-07-21", "2026-07-28"]
+
+
+def test_old_configs_without_skip_dates_still_load(kb: KnowledgeBase, tmp_path: Path) -> None:
+    path = tmp_path / "config.json"
+    path.write_text(
+        '{"recurring": [{"weekdays": [1], "hour": 14, "minute": 0, '
+        '"duration_min": 60, "comment": "Sync"}]}',
+        encoding="utf-8",
+    )
+    meeting = ScheduleConfig.load(path, kb).recurring[0]
+    assert meeting.skip_dates == []
+
+
+# ---- SC-10: hand-rolled .ics reading ---------------------------------------
+_ICS_LITERAL = (
+    "BEGIN:VCALENDAR\r\n"
+    "VERSION:2.0\r\n"
+    # 1) a normal, naive local-time event.
+    "BEGIN:VEVENT\r\n"
+    "DTSTART:20260410T090000\r\n"
+    "DTEND:20260410T093000\r\n"
+    "SUMMARY:Kickoff\r\n"
+    "END:VEVENT\r\n"
+    # 2) a folded SUMMARY line — the leading space on the continuation line is
+    #    the RFC 5545 fold marker and is dropped; the trailing space on the
+    #    first physical line is real content and survives.
+    "BEGIN:VEVENT\r\n"
+    "DTSTART:20260411T140000\r\n"
+    "DTEND:20260411T150000\r\n"
+    "SUMMARY:Folded meeting title that continues \r\n"
+    " onto the next physical line\r\n"
+    "END:VEVENT\r\n"
+    # 3) a UTC (Z-suffixed) start, to be converted into the schedule's zone.
+    "BEGIN:VEVENT\r\n"
+    "DTSTART:20260412T080000Z\r\n"
+    "DTEND:20260412T083000Z\r\n"
+    "SUMMARY:UTC event\r\n"
+    "END:VEVENT\r\n"
+    # 4) an all-day event (VALUE=DATE), which callers must skip.
+    "BEGIN:VEVENT\r\n"
+    "DTSTART;VALUE=DATE:20260413\r\n"
+    "SUMMARY:Company holiday\r\n"
+    "END:VEVENT\r\n"
+    "END:VCALENDAR\r\n"
+)
+
+
+def test_parse_ics_normal_folded_utc_and_all_day() -> None:
+    tz = ZoneInfo("Europe/Berlin")
+    events = parse_ics(_ICS_LITERAL, tz)
+    assert len(events) == 4
+
+    kickoff, folded, utc_event, holiday = events
+
+    assert kickoff.dtstart == datetime(2026, 4, 10, 9, 0, tzinfo=tz)
+    assert kickoff.duration_min == 30
+    assert kickoff.summary == "Kickoff"
+    assert not kickoff.all_day
+
+    assert folded.summary == "Folded meeting title that continues onto the next physical line"
+
+    # 08:00 UTC on 12 April 2026 is 10:00 in Europe/Berlin (CEST, UTC+2).
+    assert utc_event.dtstart == datetime(2026, 4, 12, 10, 0, tzinfo=tz)
+    assert utc_event.duration_min == 30
+    assert not utc_event.all_day
+
+    assert holiday.all_day
+    assert holiday.dtstart.date() == date(2026, 4, 13)
+    assert holiday.summary == "Company holiday"
+
+
+def test_parse_ics_duration_fallbacks() -> None:
+    tz = ZoneInfo("Europe/Berlin")
+    # No DTEND, but a DURATION.
+    text = (
+        "BEGIN:VEVENT\r\nDTSTART:20260410T090000\r\nDURATION:PT45M\r\nSUMMARY:x\r\nEND:VEVENT\r\n"
+    )
+    assert parse_ics(text, tz)[0].duration_min == 45
+
+    # Neither DTEND nor DURATION: falls back to 30.
+    text = "BEGIN:VEVENT\r\nDTSTART:20260410T090000\r\nSUMMARY:x\r\nEND:VEVENT\r\n"
+    assert parse_ics(text, tz)[0].duration_min == 30
+
+
+# ---- SC-17: alternate duration syntax (+1h30m / +2h / +45m sugar) ---------
+@pytest.mark.parametrize(
+    ("spec", "expected_minutes"),
+    [
+        ("MON-FRI@10:00+30=Daily", 30),  # plain digits, unchanged
+        ("MON-FRI@10:00+1h30m=Daily", 90),
+        ("MON-FRI@10:00+2h=Daily", 120),
+        ("MON-FRI@10:00+45m=Daily", 45),
+        ("MON-FRI@10:00+1h=Daily", 60),
+        ("MON-FRI@10:00+0h30m=Daily", 30),
+    ],
+)
+def test_recurring_spec_accepts_alternate_duration_forms(spec: str, expected_minutes: int) -> None:
+    assert parse_recurring_spec(spec).duration_min == expected_minutes
+
+
+def test_recurring_spec_alternate_duration_with_interval_and_anchor() -> None:
+    meeting = parse_recurring_spec("TUE/2~2026-07-21@14:00+1h30m=Sync")
+    assert meeting.duration_min == 90
+    assert meeting.interval_weeks == 2
+    assert meeting.anchor == "2026-07-21"
+
+
+@pytest.mark.parametrize(
+    ("spec", "expected_minutes"),
+    [
+        ("2026-04-03@13:00+30=Workshop", 30),  # plain digits, unchanged
+        ("2026-04-03@13:00+1h30m=Workshop", 90),
+        ("2026-04-03@13:00+2h=Workshop", 120),
+        ("2026-04-03@13:00+45m=Workshop", 45),
+    ],
+)
+def test_oneoff_spec_accepts_alternate_duration_forms(spec: str, expected_minutes: int) -> None:
+    assert parse_oneoff_spec(spec).duration_min == expected_minutes
+
+
+def test_alternate_duration_is_equivalent_to_its_plain_minutes(kb: KnowledgeBase) -> None:
+    sugar = parse_recurring_spec("MON-FRI@10:00+1h30m=Daily")
+    plain = parse_recurring_spec("MON-FRI@10:00+90=Daily")
+    assert sugar == plain
+
+    sugar_oneoff = parse_oneoff_spec("2026-04-03@13:00+1h30m=Workshop")
+    plain_oneoff = parse_oneoff_spec("2026-04-03@13:00+90=Workshop")
+    assert sugar_oneoff == plain_oneoff
+
+
+@pytest.mark.parametrize(
+    "spec",
+    [
+        "MON-FRI@10:00+0h=Daily",  # zero total duration
+        "MON-FRI@10:00+h=Daily",  # no number at all
+        "MON-FRI@10:00+1h5=Daily",  # trailing digits with no unit
+        "MON-FRI@10:00+90x=Daily",  # unknown unit
+        "MON-FRI@10:00+=Daily",  # empty duration
+        "MON-FRI@10:00+0m=Daily",  # zero total duration, minutes form
+        "MON-FRI@10:00+m=Daily",  # unit with no number
+        "MON-FRI@10:00+1x30=Daily",  # garbage unit between numbers
+    ],
+)
+def test_bad_recurring_duration_specs_still_reject(spec: str) -> None:
+    with pytest.raises(ConfigurationError):
+        parse_recurring_spec(spec)
+
+
+@pytest.mark.parametrize(
+    "spec",
+    [
+        "2026-04-03@13:00+0h=Nope",
+        "2026-04-03@13:00+h=Nope",
+        "2026-04-03@13:00+1h5=Nope",
+        "2026-04-03@13:00+90x=Nope",
+        "2026-04-03@13:00+=Nope",
+    ],
+)
+def test_bad_oneoff_duration_specs_still_reject(spec: str) -> None:
+    with pytest.raises(ConfigurationError):
+        parse_oneoff_spec(spec)
+
+
+def test_parse_ics_unfolds_lf_only_input_too() -> None:
+    """Some generators fold with bare LF rather than CRLF; unfold() copes."""
+    tz = ZoneInfo("Europe/Berlin")
+    text = "BEGIN:VEVENT\nDTSTART:20260410T090000\nSUMMARY:Split \n title\nEND:VEVENT\n"
+    events = parse_ics(text, tz)
+    assert events[0].summary == "Split title"

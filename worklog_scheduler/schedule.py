@@ -12,10 +12,14 @@ The rules are inherited exactly from the original tool (``work_log.py:177-217``)
 
 from __future__ import annotations
 
+import csv
+import json
 import re
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
+from pathlib import Path
+from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from trackspace.errors import ConfigurationError
@@ -25,18 +29,42 @@ from .config import WEEKDAY_NAMES, OneOffMeeting, RecurringMeeting, ScheduleConf
 
 _WEEKDAY_LOOKUP = {name.upper(): index for index, name in enumerate(WEEKDAY_NAMES)}
 
+#: SC-17: plain minutes (unchanged), or Nh / NhMm / Mm as sugar for it. Order
+#: matters — the longest, most specific alternative (hours-and-minutes) is
+#: tried first so "1h30m" isn't left partially matched by the bare-hours arm.
+#: Every alternative requires at least one digit, so bare "h"/"m" or an empty
+#: duration still fail to match at all, and something like "1h5" or "90x" has
+#: no alternative that consumes it fully up to the following "=".
+_DURATION_GROUP = r"(?P<duration>\d+h\d+m|\d+h|\d+m|\d+)"
+
 #: DAYS[/EVERY_N_WEEKS][~ANCHOR]@HH:MM+MINUTES=COMMENT
 _RECURRING_SPEC = re.compile(
     r"^(?P<days>[A-Za-z0-9,\-]+)"
     r"(?:/(?P<interval>\d+))?"
     r"(?:~(?P<anchor>\d{4}-\d{2}-\d{2}))?"
     r"@(?P<hour>\d{1,2}):(?P<minute>\d{2})"
-    r"\+(?P<duration>\d+)=(?P<comment>.+)$"
+    r"\+" + _DURATION_GROUP + r"=(?P<comment>.+)$"
 )
 _ONEOFF_SPEC = re.compile(
     r"^(?P<date>\d{4}-\d{2}-\d{2})@(?P<hour>\d{1,2}):(?P<minute>\d{2})"
-    r"\+(?P<duration>\d+)=(?P<comment>.+)$"
+    r"\+" + _DURATION_GROUP + r"=(?P<comment>.+)$"
 )
+
+_DURATION_SUGAR = re.compile(r"^(?:(?P<hours>\d+)h)?(?:(?P<minutes>\d+)m)?$")
+
+
+def _duration_minutes(text: str) -> int:
+    """Read the ``duration`` capture group: plain digits, or Nh/NhMm/Mm sugar."""
+    if text.isdigit():
+        return int(text)
+    match = _DURATION_SUGAR.match(text)
+    if match is None:
+        # Unreachable in practice: _RECURRING_SPEC/_ONEOFF_SPEC's duration
+        # group only ever captures one of the four shapes this also accepts.
+        raise ConfigurationError(f"unreadable duration {text!r}")
+    hours = int(match["hours"] or 0)
+    minutes = int(match["minutes"] or 0)
+    return hours * 60 + minutes
 
 
 @dataclass(frozen=True)
@@ -47,6 +75,10 @@ class WorklogEntry:
     started: datetime
     duration_min: int
     comment: str
+    #: SC-18: which rule produced this entry, e.g. "recurring #1 (Daily)" or
+    #: "one-off". Empty unless the caller asked for it — nothing populates this
+    #: outside build_entries, and no pinned test compares WorklogEntry equality.
+    source: str = ""
 
 
 def daterange(start: date, end: date) -> Iterator[date]:
@@ -95,7 +127,9 @@ def build_entries(cfg: ScheduleConfig) -> list[WorklogEntry]:
     for day in daterange(start, end):
         if day in excluded:
             continue
-        for meeting, anchor_week in zip(cfg.recurring, anchor_weeks, strict=True):
+        for index, (meeting, anchor_week) in enumerate(
+            zip(cfg.recurring, anchor_weeks, strict=True), 1
+        ):
             if meeting.occurs_on(day, anchor_week):
                 entries.append(
                     WorklogEntry(
@@ -105,6 +139,7 @@ def build_entries(cfg: ScheduleConfig) -> list[WorklogEntry]:
                         ),
                         duration_min=meeting.duration_min,
                         comment=meeting.comment,
+                        source=f"recurring #{index} ({meeting.comment})",
                     )
                 )
 
@@ -121,6 +156,7 @@ def build_entries(cfg: ScheduleConfig) -> list[WorklogEntry]:
                 started=datetime.combine(day, time(oneoff.hour, oneoff.minute), tzinfo=tz),
                 duration_min=oneoff.duration_min,
                 comment=oneoff.comment,
+                source="one-off",
             )
         )
 
@@ -130,6 +166,89 @@ def build_entries(cfg: ScheduleConfig) -> list[WorklogEntry]:
 
 def total_minutes(entries: list[WorklogEntry]) -> int:
     return sum(entry.duration_min for entry in entries)
+
+
+# ---- SC-9: exporting the planned schedule -----------------------------------
+def export_entries(entries: Sequence[WorklogEntry], path: Path, *, issue_key: str) -> None:
+    """Write the planned entries to ``.csv``, ``.json`` or ``.ics``.
+
+    Mirrors ``dashboard.export()``'s CSV/JSON style. Only ever called behind an
+    explicit ``--export`` flag on ``preview``; the terminal table still prints
+    alongside it.
+    """
+    suffix = path.suffix.lower()
+    if suffix not in (".csv", ".json", ".ics"):
+        raise ConfigurationError(f"unknown export format {path.suffix!r}; use .csv, .json or .ics")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if suffix == ".csv":
+        _export_csv(entries, path)
+    elif suffix == ".json":
+        _export_json(entries, path)
+    else:
+        _export_ics(entries, path, issue_key)
+
+
+def _entry_rows(entries: Sequence[WorklogEntry]) -> list[dict[str, Any]]:
+    return [
+        {
+            "date": f"{entry.started:%Y-%m-%d}",
+            "day": f"{entry.started:%a}",
+            "time": f"{entry.started:%H:%M}",
+            "duration_min": entry.duration_min,
+            "comment": entry.comment,
+        }
+        for entry in entries
+    ]
+
+
+def _export_csv(entries: Sequence[WorklogEntry], path: Path) -> None:
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(
+            handle, fieldnames=["date", "day", "time", "duration_min", "comment"]
+        )
+        writer.writeheader()
+        writer.writerows(_entry_rows(entries))
+
+
+def _export_json(entries: Sequence[WorklogEntry], path: Path) -> None:
+    path.write_text(json.dumps(_entry_rows(entries), indent=2), encoding="utf-8")
+
+
+def _escape_ics_text(value: str) -> str:
+    """RFC 5545 §3.3.11 TEXT escaping: backslash, comma, semicolon and newline."""
+    out: list[str] = []
+    for char in value:
+        if char == "\\":
+            out.append("\\\\")
+        elif char == ";":
+            out.append("\\;")
+        elif char == ",":
+            out.append("\\,")
+        elif char == "\n":
+            out.append("\\n")
+        else:
+            out.append(char)
+    return "".join(out)
+
+
+def _export_ics(entries: Sequence[WorklogEntry], path: Path, issue_key: str) -> None:
+    lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//trackspace-worklog-scheduler//EN"]
+    utc = ZoneInfo("UTC")
+    for entry in entries:
+        start_utc = entry.started.astimezone(utc)
+        end_utc = (entry.started + timedelta(minutes=entry.duration_min)).astimezone(utc)
+        uid = f"trackspace-{issue_key}-{entry.started:%Y-%m-%d}-{entry.started:%H%M}@trackspace"
+        lines += [
+            "BEGIN:VEVENT",
+            f"UID:{uid}",
+            f"DTSTART:{start_utc:%Y%m%dT%H%M%S}Z",
+            f"DTEND:{end_utc:%Y%m%dT%H%M%S}Z",
+            f"SUMMARY:{_escape_ics_text(entry.comment)}",
+            "END:VEVENT",
+        ]
+    lines.append("END:VCALENDAR")
+    # RFC 5545 mandates CRLF line endings.
+    path.write_text("\r\n".join(lines) + "\r\n", encoding="utf-8", newline="")
 
 
 # ---- quick ranges ----------------------------------------------------------
@@ -213,7 +332,7 @@ def parse_recurring_spec(spec: str) -> RecurringMeeting:
         )
     hour, minute = int(match["hour"]), int(match["minute"])
     _check_clock(hour, minute, spec)
-    duration = int(match["duration"])
+    duration = _duration_minutes(match["duration"])
     if duration <= 0:
         raise ConfigurationError(f"duration must be positive in {spec!r}")
     interval = int(match["interval"] or 1)
@@ -247,7 +366,7 @@ def parse_oneoff_spec(spec: str) -> OneOffMeeting:
         raise ConfigurationError(f"invalid date in {spec!r}: {exc}") from exc
     hour, minute = int(match["hour"]), int(match["minute"])
     _check_clock(hour, minute, spec)
-    duration = int(match["duration"])
+    duration = _duration_minutes(match["duration"])
     if duration <= 0:
         raise ConfigurationError(f"duration must be positive in {spec!r}")
     return OneOffMeeting(

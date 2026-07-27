@@ -3,6 +3,13 @@
 Same three panels the original drew with matplotlib — stacked daily hours by
 ticket, top tickets grouped by title with IPs collapsed, and the summary block —
 and the same numbers behind them. Only the canvas changed.
+
+SC-1: ``fetch_worklogs`` used to read only the first page of each issue's
+worklogs (``client.issue_worklogs(key, paginate=False)``, reproducing
+``work_log.py:306-308``'s single unparameterised request). It now pages fully,
+so totals can legitimately increase for any issue that was silently truncated
+before — a deliberate, user-visible behaviour change, not a bugfix hidden in a
+refactor.
 """
 
 from __future__ import annotations
@@ -112,7 +119,9 @@ def fetch_worklogs(
         if on_issue is not None:
             on_issue(index, len(issues), key)
         try:
-            worklogs = client.issue_worklogs(key, paginate=False)
+            # SC-1: fetch every page rather than only the first, so a heavily-
+            # logged issue is no longer silently undercounted.
+            worklogs = client.issue_worklogs(key)
         except TrackspaceError as exc:
             # One unreadable issue must not lose the rest of the period.
             if on_warning is not None:
@@ -350,6 +359,25 @@ def _summary_rows(data: Dashboard) -> list[tuple[str, str]]:
         ("Avg active day", f"{data.average_active_day:.1f} h"),
         ("Unique tickets", f"{unique_tickets}"),
         ("Busiest day", busiest_text),
+    ]
+
+
+def target_rows(data: Dashboard, target_hours_per_day: float) -> list[tuple[str, str]]:
+    """SC-19: target-vs-actual figures for an opt-in ``--target-hours-per-day`` panel.
+
+    Never called from the default (unflagged) dashboard path — ``_summary_rows``
+    and the "Summary" panel it feeds stay exactly as they were.
+    """
+    weekdays_in_range = [day for day in data.days if day.weekday() < 5]
+    expected = target_hours_per_day * len(weekdays_in_range)
+    actual = data.total_hours
+    gap = actual - expected
+    sign = "+" if gap >= 0 else ""
+    return [
+        ("Target / day", f"{target_hours_per_day:.1f} h"),
+        ("Expected total", f"{expected:.1f} h  ({len(weekdays_in_range)} weekdays)"),
+        ("Actual", f"{actual:.1f} h"),
+        ("Gap", f"{sign}{gap:.1f} h"),
     ]
 
 

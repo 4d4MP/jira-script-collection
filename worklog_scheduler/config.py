@@ -38,6 +38,9 @@ class RecurringMeeting:
     #: A date in a week the meeting *does* happen. Empty means "count from the
     #: start of the range", which is what a fresh bi-weekly meeting gets.
     anchor: str = ""
+    #: SC-7: dates this one meeting is cancelled on, without touching any other
+    #: meeting that day. Config-wide ``exclude_dates`` still suppresses everything.
+    skip_dates: list[str] = field(default_factory=list)
 
     def weekdays_str(self) -> str:
         selected = set(self.weekdays)
@@ -65,6 +68,8 @@ class RecurringMeeting:
         anchor when it has one, otherwise the caller's fallback.
         """
         if day.weekday() not in self.weekdays:
+            return False
+        if day.isoformat() in self.skip_dates:
             return False
         if self.interval_weeks <= 1:
             return True
@@ -138,6 +143,9 @@ class ScheduleConfig:
                     # Absent in configs written before bi-weekly existed.
                     interval_weeks=int(r.get("interval_weeks", 1) or 1),
                     anchor=str(r.get("anchor", "")),
+                    # SC-7: absent in configs written before per-meeting blackout
+                    # dates existed.
+                    skip_dates=[str(d) for d in r.get("skip_dates", [])],
                 )
                 for r in data.get("recurring", [])
             ],
