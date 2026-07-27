@@ -27,7 +27,7 @@ dev = [
     "pip-audit==2.10.1",
     "types-requests==2.33.0.20260712",
     "pandas-stubs==3.0.3.260530",
-    "types-python-dateutil==2.9.0.20260516",
+    "types-python-dateutil==2.9.0.20260716",
 ]
 
 [project.scripts]
