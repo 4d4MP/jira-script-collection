@@ -79,7 +79,7 @@ including error, empty and malformed cases. The whole test suite runs off these.
   `cyan`), `dim`, and `white` are banned — a test enforces it — and `value`
   deliberately carries no colour so it inherits the terminal foreground.
 
-### The two tools
+### The four tools
 
 `worklog_scheduler/` was rewritten from a Tkinter GUI into an interactive CLI,
 but its **behaviour is frozen**: same schedule expansion, dry-run default, same
@@ -106,6 +106,21 @@ Both tools attach their shared flags to the top-level parser *and* to each
 subparser, with `argparse.SUPPRESS` as the subparser default. Without that,
 argparse writes the subcommand's default over anything parsed before the
 subcommand and `--issue X preview` silently loses the issue.
+
+`instance_probe/` is the read-only probe for the KB's declared unknowns
+(GET-only guard, opt-in hard-capped rate-limit burst, findings for human
+fold-in — it never writes the KB). `issue_companion/` is the merged
+transitions/comments/attachments/links/changelog tool; transition *execution*
+is gated until a probe run records a real transition graph. Both follow the
+CLI contract below. `trackspace/export.py` defines the shared canonical row
+shape (`trackspace-worklog-rows/1`) both worklog tools emit via
+`--export-canonical`; the historical per-tool export shapes are pinned and
+unchanged. The scheduler's dashboard now paginates worklogs fully (SC-1) — a
+deliberate, documented behaviour change, not a silent bugfix.
+`kb/build-notes.md` carries the per-item build lessons and the honest record
+that the probe's live run has not happened yet (no PAT and no network
+line-of-sight from the build environment), so the KB's unknowns are still
+unknowns.
 
 ### CLI contract for anything new
 

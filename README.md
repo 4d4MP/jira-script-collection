@@ -9,9 +9,11 @@ instance is Trackspace.
 
 ```
 kb/                    facts about the instance + offline fixtures
-trackspace/            shared library: client, auth, errors, CLI UX
+trackspace/            shared library: client, auth, errors, export, CLI UX
 worklog_scheduler/     plan, preview and post meeting worklogs
 worklog_visualizer/    show what you logged over a window
+instance_probe/        read-only probe that resolves the KB's unknowns
+issue_companion/       transitions, comments, attachments, links, changelog
 tests/                 runs entirely against kb/fixtures — no network, no PAT
 ```
 
@@ -69,6 +71,19 @@ half-finished meeting — and Ctrl+C leaves cleanly from anywhere.
 Configuration lives at `~/.jira_worklog_manager.json`, the original path, so
 existing configs keep working.
 
+Recent additions, all opt-in: per-meeting `skip_dates` (cancel one meeting on
+one date without excluding the whole day), `--exclude-file PATH` (plain-text or
+`.ics` holiday lists), `preview --export PATH` (`.csv`/`.json`/`.ics` of the
+planned schedule — the terminal preview still prints), `--import-ics PATH`
+(VEVENTs become one-off meetings; all-day events are skipped with a warning),
+`+1h30m`/`+2h`/`+45m` duration sugar in meeting specs (plain digits still mean
+minutes), `preview --explain` (which rule produced each row), and
+`dashboard --target-hours-per-day N` (a separate target-vs-actual panel).
+
+One deliberate behaviour change: the dashboard now paginates each issue's
+worklogs fully instead of reading only the first page, so totals can
+legitimately increase for issues that were silently truncated before.
+
 Exit codes: `0` fine · `1` some worklogs failed · `2` configuration problem ·
 `130` cancelled with Ctrl+C.
 
@@ -98,8 +113,56 @@ Windows: `--ago 5m|10h|2d|4M|1Y` (case-sensitive units), `--date` as
 minute. Absolute values are read in local time; `worklogDate` is day-granular, so
 sub-day windows are filtered client-side.
 
+`--jql "EXPR"` replaces the author clause as the issue-selection filter (the
+window bounds are still ANDed on, and whose worklogs are counted is still
+`--user`'s job). Anything beyond the two proven JQL templates is unverified
+ground on this instance.
+
 Exit codes: `0` fine · `1` request failed · `2` auth or configuration problem ·
 `130` cancelled with Ctrl+C.
+
+### Canonical export (both tools)
+
+`--export-canonical PATH` (`.json`/`.csv`) writes the shared row shape
+`issue, summary, date, hours, comment, author` (schema
+`trackspace-worklog-rows/1`, defined in `trackspace/export.py`). Fields a tool
+does not collect are empty strings, so every canonical file has the same
+columns whichever tool wrote it. The historical per-tool export formats are
+unchanged.
+
+### `instance_probe` — turn the KB's unknowns into sourced facts
+
+```bash
+python -m instance_probe                       # all read-only steps
+python -m instance_probe --only fields --only project
+python -m instance_probe --rate-limit-burst 5  # opt-in, hard-capped at 20
+python -m instance_probe --export findings.json
+```
+
+GET-only by construction (a startup guard refuses any non-GET step). Steps:
+fields, project, createmeta, statuses, transitions (list only), permissions,
+error-shape (deliberate 404/400 against bogus keys), and the opt-in rate-limit
+burst, reported strictly as "0/N requests returned 429 at burst=N on <date>".
+The probe **never writes `kb/trackspace.json`** — findings are folded in by a
+human, with the probe run cited as the fact's `source`.
+
+### `issue_companion` — everything around one issue
+
+```bash
+python -m issue_companion                              # interactive
+python -m issue_companion show CLOPSSEC-41456 --changelog --attachments --links
+python -m issue_companion transitions CLOPSSEC-41456   # list only
+python -m issue_companion comment CLOPSSEC-41456 add --body "note"
+python -m issue_companion attach CLOPSSEC-41456 upload report.png
+python -m issue_companion link CLOPSSEC-41456 add --type Blocks --to CLOPSSEC-41501
+```
+
+Comments (list/add/update/delete), attachments (list/upload/delete — upload
+preflights `/attachment/meta` and refuses oversized files), issue and remote
+links (type names validated against the instance's link types), and the
+changelog. Mutations confirm interactively unless `--yes`. Executing workflow
+transitions is deliberately **not** built yet: it is gated on a probe run
+recording a real transition graph first.
 
 ## Adding a tool
 

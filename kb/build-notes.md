@@ -7,36 +7,36 @@ LIB-10, HYG-1..5. One lesson per item as it lands. Specs live in
 
 ## Orchestration state (updated as phases complete)
 
-- [ ] **Phase 0 — foundation (single-writer choke points)**: new KB endpoint
+- [x] **Phase 0 — foundation (single-writer choke points)**: new KB endpoint
   entries in `kb/trackspace.json` (probe + companion endpoints, paths/methods
   only — response shapes stay unverified until probed), all new fixtures in
   `kb/fixtures/`, routing in `tests/conftest.py`, rows in
   `kb/fixtures/README.md`. `tests/test_kb.py`'s method whitelist extended to
   GET/POST/PUT/DELETE (meta-test, not pinned behaviour). Commit.
-- [ ] **Phase 1 — parallel packages** (agents; none may touch
+- [x] **Phase 1 — parallel packages** (agents; none may touch
   kb/trackspace.json, tests/conftest.py, kb/fixtures/*, README.md, CLAUDE.md):
-  - [ ] NT-1: `instance_probe/` package + `tests/test_probe.py`
-  - [ ] NT-2..6: `issue_companion/` package + `tests/test_issue_companion.py`
+  - [x] NT-1: `instance_probe/` package + `tests/test_probe.py`
+  - [x] NT-2..6: `issue_companion/` package + `tests/test_issue_companion.py`
     (+ multipart/headers support in `trackspace/client.py` — that agent owns
     client.py). Transition *execute* path NOT built (gated on a real probe
     run returning a transition graph).
-  - [ ] SCHED: SC-1, SC-7, SC-8, SC-9, SC-10, SC-17, SC-18, SC-19 in
+  - [x] SCHED: SC-1, SC-7, SC-8, SC-9, SC-10, SC-17, SC-18, SC-19 in
     `worklog_scheduler/` + appends to tests/test_schedule.py +
     tests/test_scheduler_cli.py
-  - [ ] VZ-2: `--jql` passthrough in `worklog_visualizer/` + appends to
+  - [x] VZ-2: `--jql` passthrough in `worklog_visualizer/` + appends to
     tests/test_visualizer.py
-  - [ ] HYG-1..4: .github/workflows/ci.yml, .pre-commit-config.yaml,
+  - [x] HYG-1..4: .github/workflows/ci.yml, .pre-commit-config.yaml,
     .gitleaks.toml, .gitignore credential patterns
-- [ ] **Phase 2 — integration (me, after Phase 1 merges)**: LIB-2 (wire
+- [x] **Phase 2 — integration (me, after Phase 1 merges)**: LIB-2 (wire
   on_progress in both tools), LIB-10 (third canonical export shape, opt-in in
   both tools), console-script entries in pyproject.toml for new packages.
-- [ ] **Phase 3 — probe live run**: attempt NT-1 against production with
+- [~] **Phase 3 (tool built; live run NOT possible from this environment — see NT-1 findings below) — probe live run**: attempt NT-1 against production with
   TRACKSPACE_PAT (network may be blocked by the sandbox proxy — report
   honestly either way). Fold findings into kb/trackspace.json as ONE deliberate
   cited edit (probe never writes its own KB entries). KBW-1..6.
-- [ ] **Phase 4 — gate + docs + ship**: full pytest/ruff/mypy/bandit, README +
+- [x] **Phase 4 — gate + docs + ship**: full pytest/ruff/mypy/bandit, README +
   CLAUDE.md updates, conventional commits, push to main.
-- [ ] HYG-5: report-only, findings recorded below. No git history action.
+- [x] HYG-5: report-only, findings recorded below. No git history action.
 
 ## Design decisions
 
@@ -64,7 +64,52 @@ LIB-10, HYG-1..5. One lesson per item as it lands. Specs live in
 
 ## Lessons per item
 
-(filled in as each item lands)
+- **NT-1**: the rate-limit step deliberately bypasses `request_json` (raw
+  `client.session.request`) so it can capture headers/elapsed even on 200s with
+  retries never engaged — a documented exception to "everything through the
+  client", scoped to that one step. The GET-only startup guard doubles as a
+  regression tripwire if someone later points a step at a write endpoint.
+- **NT-2..6**: merging five audit entries into one package worked because they
+  share everything: one issue in hand, one chrome, one fixture set. The one
+  cross-agent hiccup: the package started life as `companion.py` and renamed
+  itself to `cli.py` to match the entry point pyproject had staged — naming the
+  console-script module up front would have avoided it.
+- **SC-1**: the audit's framing held exactly — dropping `paginate=False` was a
+  one-argument change because the paginating path already existed and was
+  already proven by the visualiser. The real work was saying out loud that
+  totals can now increase (docstring + call-site note), not the code.
+- **SC-7**: `skip_dates` on the meeting, checked inside `occurs_on`, needed no
+  grammar change — config-field + tolerant `from_dict` was enough.
+- **SC-8/9/10**: one shared hand-rolled ICS module (`worklog_scheduler/ics.py`)
+  covers export, import and exclusion files on stdlib alone. All-day VEVENTs
+  are skipped with a warning; `apply_flags` now returns warnings so they can
+  print once a console exists (small signature change, single caller).
+- **SC-17**: the safe pattern was widening ONLY the duration capture group with
+  longest-alternative-first ordering (`\d+h\d+m|\d+h|\d+m|\d+`) and
+  converting in a helper — the full pre-existing negative-case battery ran
+  green before any new tests were written. Riskiest item, landed last on a
+  green base, as planned.
+- **SC-18/19**: strictly opt-in panels/columns; the pinned default outputs
+  never changed. `WorklogEntry.source` defaults to `""` and nothing pinned
+  compares entry equality, so the extra field was free.
+- **VZ-2**: composing `(EXPR) AND worklogDate ...` and keeping the client-side
+  author/instant filters is the whole feature — arbitrary JQL selects issues,
+  not worklogs (quirks #3/#4). What arbitrary JQL does on the real instance
+  remains unverified ground.
+- **LIB-2**: the callback existed since day one; wiring it was ~15 lines across
+  both tools. The lesson is that unused seams rot silently — nothing had ever
+  exercised `on_progress` outside client tests.
+- **LIB-10**: reconciliation by *third shape* (issue/summary/date/hours/
+  comment/author, empty strings for uncollected fields, schema marker
+  `trackspace-worklog-rows/1`) let both pinned export tests stay untouched.
+  `read_canonical` exists so future replay work starts from a validated shape.
+- **HYG-1**: the first real CI run caught a real bug — the
+  `types-python-dateutil` pin named a version that was never published (written
+  from memory instead of `pip list`). Fixed in a01fd02. Lesson: pins go in from
+  `pip list --format=freeze`, never typed by hand.
+- **HYG-2/3/4**: config-only; pre-commit/gitleaks binaries aren't in this
+  sandbox, so those run unverified until someone executes them locally or the
+  gitleaks hook fires in pre-commit.
 
 ## HYG-5 — instance-identifying exposure (report only, no action taken)
 
@@ -81,6 +126,27 @@ From the audit's hygiene pass (full grep + `git log --all -S` pickaxe):
   (`git filter-repo`-class), since they are load-bearing in nearly every
   commit. **No action taken; that decision belongs to the repo owner.**
 
-## NT-1 findings (filled in after the live probe run)
+## NT-1 findings — live run NOT possible from this environment (2026-07-27)
 
-(pending)
+Attempted after the tool was built and its offline tests passed:
+
+- `TRACKSPACE_PAT` is **not set** in this session's environment (contrary to
+  the task brief's expectation). The probe refused with the standard
+  ConfigurationError, exactly as designed.
+- Independently of auth, the instance is **unreachable from this sandbox**:
+  `curl https://trackspace.lhsystems.com/rest/api/2/serverInfo` fails with
+  `CONNECT tunnel failed, response 403` from the egress proxy. No request
+  reached Trackspace.
+
+Consequences, stated per the sequencing rules:
+- **KBW-1..6 remain open.** kb/trackspace.json's unknowns (custom field ids,
+  issue types, workflow states, CLOPSSEC's real name, error body shape,
+  rate-limit behaviour) are left exactly as they were — no fold-in happened,
+  because there are no findings to fold in. The seven probe fixtures remain
+  synthetic placeholders, flagged as such in kb/fixtures/README.md.
+- **The transition-execute path stays unbuilt** (its gate — a real probed
+  transition graph — was never satisfied).
+- To close this out: run `trackspace-probe --export findings.json` from a
+  machine with the PAT and network line-of-sight to the instance, then fold
+  the findings into kb/trackspace.json as one cited edit ("probe run <date>,
+  see <report path>") — the probe deliberately never writes the KB itself.
