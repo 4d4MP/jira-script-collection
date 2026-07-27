@@ -14,6 +14,7 @@ from __future__ import annotations
 import time
 from collections.abc import Callable, Iterator, Sequence
 from datetime import datetime
+from pathlib import Path
 from typing import Any, cast
 
 import requests
@@ -113,14 +114,30 @@ class TrackspaceClient:
         json_body: dict[str, Any] | None,
         timeout: float,
         retry: bool,
+        files: dict[str, Any] | None = None,
+        extra_headers: dict[str, str] | None = None,
     ) -> requests.Response:
+        # Additive: only build the multipart/header kwargs when a caller actually
+        # needs them, so every pre-existing call site sends exactly the same
+        # arguments it always has.
+        request_kwargs: dict[str, Any] = {"params": params, "json": json_body, "timeout": timeout}
+        if files is not None:
+            request_kwargs["files"] = files
+        if files is not None or extra_headers is not None:
+            headers: dict[str, str | None] = dict(extra_headers or {})
+            if files is not None:
+                # A multipart body needs its own boundary-bearing Content-Type,
+                # which requests sets itself. Setting the key to None tells
+                # requests to drop the session's `application/json` header for
+                # this one request instead of sending both.
+                headers.setdefault("Content-Type", None)
+            request_kwargs["headers"] = headers
+
         attempt = 0
         while True:
             error: TrackspaceError
             try:
-                response = self.session.request(
-                    method, url, params=params, json=json_body, timeout=timeout
-                )
+                response = self.session.request(method, url, **request_kwargs)
             except requests.Timeout:
                 error = TransportError(f"{method} {url} timed out after {timeout:g}s", url=url)
             except requests.RequestException as exc:
@@ -143,10 +160,17 @@ class TrackspaceClient:
         path_params: dict[str, str] | None = None,
         params: dict[str, Any] | None = None,
         json_body: dict[str, Any] | None = None,
+        files: dict[str, Any] | None = None,
+        extra_headers: dict[str, str] | None = None,
         timeout: float | None = None,
         retry: bool | None = None,
     ) -> Any:
-        """Call a knowledge-base endpoint and return the decoded JSON body."""
+        """Call a knowledge-base endpoint and return the decoded JSON body.
+
+        ``files`` (multipart) and ``extra_headers`` (merged into this one
+        request, e.g. ``X-Atlassian-Token: no-check``) are additive — both
+        default to ``None`` and every pre-existing call site is unaffected.
+        """
         endpoint = self.kb.endpoint(endpoint_name)
         url = self._url(endpoint_name, **(path_params or {}))
         should_retry = endpoint.method == "GET" if retry is None else retry
@@ -155,6 +179,8 @@ class TrackspaceClient:
             url,
             params=params,
             json_body=json_body,
+            files=files,
+            extra_headers=extra_headers,
             timeout=timeout if timeout is not None else endpoint.timeout_s,
             retry=should_retry,
         )
@@ -314,3 +340,182 @@ class TrackspaceClient:
             retry=False,
         )
         return cast(dict[str, Any], result or {})
+
+    # ---- issue, transitions, changelog -------------------------------------
+    def issue_get(
+        self,
+        issue_key: str,
+        *,
+        expand: str | None = None,
+        fields: str | None = None,
+    ) -> dict[str, Any]:
+        """One issue. ``expand="changelog"`` embeds history; ``fields`` scopes
+        the response (e.g. ``"attachment"``) — there is no dedicated list route
+        for either on Data Center."""
+        params: dict[str, Any] = {}
+        if expand:
+            params["expand"] = expand
+        if fields:
+            params["fields"] = fields
+        result = self.request_json(
+            "issue_get", path_params={"issue_key": issue_key}, params=params or None
+        )
+        return cast(dict[str, Any], result or {})
+
+    def issue_transitions(self, issue_key: str) -> list[dict[str, Any]]:
+        """Transitions available on this issue from its current status.
+
+        Read-only listing. There is deliberately no execute method here — see
+        ``kb/build-notes.md``: the POST is gated on a probe run recording a
+        real transition graph.
+        """
+        data = self.request_json("issue_transitions", path_params={"issue_key": issue_key})
+        if isinstance(data, dict) and isinstance(data.get("transitions"), list):
+            return cast(list[dict[str, Any]], data["transitions"])
+        return []
+
+    # ---- comments ------------------------------------------------------------
+    def comments(
+        self,
+        issue_key: str,
+        *,
+        page_size: int | None = None,
+        on_progress: ProgressCallback | None = None,
+    ) -> list[dict[str, Any]]:
+        """All comments on an issue, paged by returned count (mirrors
+        ``iter_search_issues``: correct even if the server caps ``maxResults``
+        below what was asked for)."""
+        size = page_size or self.kb.page_size("comment_list")
+        payload_key = self.kb.payload_key("comment_list")
+        path_params = {"issue_key": issue_key}
+        rows: list[dict[str, Any]] = []
+        start_at = 0
+        fetched = 0
+        while True:
+            data = self.request_json(
+                "comment_list",
+                path_params=path_params,
+                params={"startAt": start_at, "maxResults": size},
+            )
+            page, total = self._page_of(data, payload_key, "comment_list")
+            rows.extend(page)
+            fetched += len(page)
+            if on_progress is not None:
+                on_progress(fetched, total)
+            if not page or start_at + len(page) >= total:
+                return rows
+            start_at += len(page)
+
+    def add_comment(self, issue_key: str, body: str) -> dict[str, Any]:
+        """Post one comment. Never retried — not idempotent, same policy as
+        ``add_worklog``."""
+        result = self.request_json(
+            "comment_add",
+            path_params={"issue_key": issue_key},
+            json_body={"body": body},
+            retry=False,
+        )
+        return cast(dict[str, Any], result or {})
+
+    def update_comment(self, issue_key: str, comment_id: str, body: str) -> dict[str, Any]:
+        result = self.request_json(
+            "comment_update",
+            path_params={"issue_key": issue_key, "comment_id": comment_id},
+            json_body={"body": body},
+        )
+        return cast(dict[str, Any], result or {})
+
+    def delete_comment(self, issue_key: str, comment_id: str) -> None:
+        self.request_json(
+            "comment_delete", path_params={"issue_key": issue_key, "comment_id": comment_id}
+        )
+
+    # ---- attachments -----------------------------------------------------
+    def upload_attachment(self, issue_key: str, path: Path) -> dict[str, Any]:
+        """Upload a file as an attachment. Never retried — the POST is not
+        idempotent, same policy as ``add_worklog``.
+
+        Sent as multipart/form-data with the field named ``file`` and the
+        ``X-Atlassian-Token: no-check`` header Jira Data Center requires for
+        attachment uploads (both facts recorded on the ``attachment_upload``
+        knowledge-base entry).
+        """
+        with path.open("rb") as handle:
+            result = self.request_json(
+                "attachment_upload",
+                path_params={"issue_key": issue_key},
+                files={"file": (path.name, handle)},
+                extra_headers={"X-Atlassian-Token": "no-check"},
+                retry=False,
+            )
+        if isinstance(result, list) and result:
+            return cast(dict[str, Any], result[0])
+        return cast(dict[str, Any], result or {})
+
+    def attachment_meta(self) -> dict[str, Any]:
+        """``{enabled, uploadLimit}`` — whether uploads are on and the byte cap."""
+        result = self.request_json("attachment_meta")
+        return cast(dict[str, Any], result or {})
+
+    def delete_attachment(self, attachment_id: str) -> None:
+        self.request_json("attachment_delete", path_params={"attachment_id": attachment_id})
+
+    # ---- issue links and remote links --------------------------------------
+    def link_types(self) -> list[dict[str, Any]]:
+        """Valid ``type.name`` values for :meth:`create_issue_link`."""
+        data = self.request_json("issue_link_types")
+        if isinstance(data, dict) and isinstance(data.get("issueLinkTypes"), list):
+            return cast(list[dict[str, Any]], data["issueLinkTypes"])
+        return []
+
+    def create_issue_link(
+        self,
+        type_name: str,
+        inward_key: str,
+        outward_key: str,
+        *,
+        comment: str | None = None,
+    ) -> None:
+        """Link two issues. Never retried — not idempotent."""
+        body: dict[str, Any] = {
+            "type": {"name": type_name},
+            "inwardIssue": {"key": inward_key},
+            "outwardIssue": {"key": outward_key},
+        }
+        if comment:
+            body["comment"] = {"body": comment}
+        self.request_json("issue_link_create", json_body=body, retry=False)
+
+    def delete_issue_link(self, link_id: str) -> None:
+        self.request_json("issue_link_delete", path_params={"link_id": link_id})
+
+    def remote_links(self, issue_key: str) -> list[dict[str, Any]]:
+        data = self.request_json("remote_link_list", path_params={"issue_key": issue_key})
+        return cast(list[dict[str, Any]], data or [])
+
+    def create_remote_link(
+        self,
+        issue_key: str,
+        url: str,
+        title: str,
+        *,
+        global_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Attach a remote link. Never retried — not idempotent as a request,
+        though a repeated ``global_id`` updates the same link server-side
+        rather than duplicating it (see the ``remote_link_create`` KB entry)."""
+        body: dict[str, Any] = {"object": {"url": url, "title": title}}
+        if global_id:
+            body["globalId"] = global_id
+        result = self.request_json(
+            "remote_link_create",
+            path_params={"issue_key": issue_key},
+            json_body=body,
+            retry=False,
+        )
+        return cast(dict[str, Any], result or {})
+
+    def delete_remote_link(self, issue_key: str, link_id: str) -> None:
+        self.request_json(
+            "remote_link_delete", path_params={"issue_key": issue_key, "link_id": link_id}
+        )

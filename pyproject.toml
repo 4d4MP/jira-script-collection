@@ -33,9 +33,11 @@ dev = [
 [project.scripts]
 trackspace-worklog-scheduler = "worklog_scheduler.schedule_and_post_worklogs:main"
 trackspace-worklog-visualizer = "worklog_visualizer.visualize_logged_worklogs:main"
+trackspace-probe = "instance_probe.cli:main"
+trackspace-issue = "issue_companion.cli:main"
 
 [tool.setuptools]
-packages = ["trackspace", "trackspace.ui", "worklog_scheduler", "worklog_visualizer"]
+packages = ["trackspace", "trackspace.ui", "worklog_scheduler", "worklog_visualizer", "instance_probe", "issue_companion"]
 
 [tool.ruff]
 line-length = 100
@@ -74,7 +76,7 @@ allowed-confusables = ["–", "—", "›", "·", "…", "’"]
 [tool.mypy]
 python_version = "3.11"
 strict = true
-files = ["trackspace", "worklog_scheduler", "worklog_visualizer"]
+files = ["trackspace", "worklog_scheduler", "worklog_visualizer", "instance_probe", "issue_companion"]
 warn_unused_configs = true
 
 [[tool.mypy.overrides]]
