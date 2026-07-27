@@ -19,7 +19,12 @@ jobs:
           python-version: "3.11"
 
       - name: Install package and dev dependencies
-        run: pip install -e ".[dev]"
+        # setup-python's environment ships a setuptools old enough to carry
+        # known advisories (pip-audit scans the whole environment, not just
+        # our dependencies), so bring build tooling current first.
+        run: |
+          pip install --upgrade pip setuptools
+          pip install -e ".[dev]"
 
       - name: ruff check
         run: ruff check .
