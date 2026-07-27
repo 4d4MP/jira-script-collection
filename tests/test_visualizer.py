@@ -501,3 +501,21 @@ def test_ctrl_c_exits_cleanly(
         viz.main(["report", "--ago", "1d"])
     assert caught.value.code == 130
     assert "Cancelled" in capsys.readouterr().out
+
+
+def test_export_canonical_writes_the_shared_shape(
+    monkeypatch: pytest.MonkeyPatch, kb: KnowledgeBase, tmp_path: Path
+) -> None:
+    patch_client(monkeypatch, kb)
+    destination = tmp_path / "canonical.csv"
+    code = viz.main(
+        ["report", "--date", "2026_04_01-2026_04_30", "--export-canonical", str(destination)]
+    )
+    assert code == 0
+    import csv as _csv
+
+    with destination.open(encoding="utf-8") as handle:
+        rows = list(_csv.DictReader(handle))
+    assert set(rows[0]) == {"issue", "summary", "date", "hours", "comment", "author"}
+    assert rows[0]["comment"] == ""  # the visualiser never collects comments
+    assert rows[0]["author"] == "Adam Papp"

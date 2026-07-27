@@ -89,6 +89,7 @@ def fetch_worklogs(
     on_issues: Callable[[int], None] | None = None,
     on_issue: Callable[[int, int, str], None] | None = None,
     on_warning: Callable[[str], None] | None = None,
+    on_search: Callable[[int, int], None] | None = None,
 ) -> tuple[list[WorklogRecord], Identity]:
     """Every worklog the token owner logged in ``[start, end]``.
 
@@ -108,7 +109,9 @@ def fetch_worklogs(
         start_date=start.isoformat(),
         end_date=end.isoformat(),
     )
-    issues = client.search_issues(jql, [client.kb.field_id("summary")])
+    # LIB-2: the client has always taken a progress callback; the search can be
+    # slow enough on this instance that a live count beats a silent spinner.
+    issues = client.search_issues(jql, [client.kb.field_id("summary")], on_progress=on_search)
     if on_issues is not None:
         on_issues(len(issues))
 

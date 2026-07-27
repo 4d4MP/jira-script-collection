@@ -614,3 +614,35 @@ def test_flags_before_the_subcommand_are_not_discarded(config_path: Path, capsys
     assert code == 0
     assert "OTHER-99" in out
     assert "2026-07-01 → 2026-07-03" in out
+
+
+def test_dashboard_export_canonical_writes_the_shared_shape(
+    config_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    kb: KnowledgeBase,
+    tmp_path: Path,
+    capsys: Any,
+) -> None:
+    patch_client(monkeypatch, kb)
+    destination = tmp_path / "canonical.json"
+    code = run(
+        "--config",
+        str(config_path),
+        "dashboard",
+        "--from",
+        "2026-04-01",
+        "--to",
+        "2026-04-30",
+        "--export-canonical",
+        str(destination),
+    )
+    out = capsys.readouterr().out
+    assert code == 0
+    import json as _json
+
+    document = _json.loads(destination.read_text(encoding="utf-8"))
+    assert document["schema"] == "trackspace-worklog-rows/1"
+    row = document["rows"][0]
+    assert set(row) == {"issue", "summary", "date", "hours", "comment", "author"}
+    assert row["author"] == "Adam Papp"  # the scheduler fills author from identity
+    assert "Canonical rows written to" in out

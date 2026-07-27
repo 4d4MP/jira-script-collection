@@ -58,6 +58,7 @@ from typing import Any, cast
 import pandas as pd
 from rich.console import Console
 
+from trackspace import export as shared_export
 from trackspace.auth import auth_status, read_pat
 from trackspace.client import TrackspaceClient
 from trackspace.errors import (
@@ -160,6 +161,16 @@ def _add_report_flags(parser: argparse.ArgumentParser, *, on_subcommand: bool = 
         help="also write the report to PATH (.png/.pdf/.svg image, or .json/.csv rows)",
     )
     parser.add_argument(
+        "--export-canonical",
+        type=Path,
+        default=default,
+        metavar="PATH",
+        help=(
+            "also write the rows in the shared canonical shape (.json or .csv) "
+            "both tools can emit — see trackspace.export"
+        ),
+    )
+    parser.add_argument(
         "--output",
         type=Path,
         default=default,
@@ -260,6 +271,7 @@ def run_report(
     destination: Path | None = None,
     show: bool = False,
     summary: chrome.RunSummary | None = None,
+    canonical_path: Path | None = None,
 ) -> pd.DataFrame:
     """Fetch, render in the terminal, and export only if asked to."""
     warnings: list[str] = []
@@ -291,6 +303,24 @@ def run_report(
     if destination is not None:
         written = export(df, report, destination, who=who, show=show)
         details.append(f"Written to {written}")
+    if canonical_path is not None:
+        # LIB-10: the shared shape, opt-in only. The visualiser never collects
+        # worklog comments, so that field is empty by design.
+        rows = [
+            shared_export.canonical_row(
+                issue=str(record["ticket_id"]),
+                summary=str(record["summary"]),
+                date=record["date"].isoformat()
+                if hasattr(record["date"], "isoformat")
+                else str(record["date"]),
+                hours=float(record["hours"]),
+                comment="",
+                author=str(record["author"]),
+            )
+            for record in df.to_dict(orient="records")
+        ]
+        shared_export.write_canonical(rows, canonical_path)
+        details.append(f"Canonical rows written to {canonical_path}")
     if warnings:
         details.append(f"{len(warnings)} worklogs could not be read and were skipped.")
 
@@ -573,6 +603,7 @@ def main(argv: list[str] | None = None) -> int:
                     args.command is None
                     and not window_flags_given(args)
                     and export_path(args) is None
+                    and args.export_canonical is None
                     and chrome.is_interactive()
                 )
                 if interactive_run:
@@ -583,6 +614,7 @@ def main(argv: list[str] | None = None) -> int:
                     report,
                     destination=export_path(args),
                     show=args.show,
+                    canonical_path=cast("Path | None", args.export_canonical),
                     summary=summary,
                 )
                 return EXIT_OK

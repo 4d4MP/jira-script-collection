@@ -31,6 +31,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from rich.console import Console
 
+from trackspace import export
 from trackspace.auth import auth_status, read_pat, require_pat
 from trackspace.client import TrackspaceClient
 from trackspace.errors import ConfigurationError, TrackspaceError
@@ -103,6 +104,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     board = subparsers.add_parser("dashboard", help="what you have logged in the range")
     _add_schedule_flags(board, on_subcommand=True)
+    board.add_argument(
+        "--export-canonical",
+        type=Path,
+        metavar="PATH",
+        help=(
+            "also write the fetched worklogs in the shared canonical shape "
+            "(.json or .csv) both tools can emit — see trackspace.export"
+        ),
+    )
     board.add_argument(
         "--export",
         type=Path,
@@ -540,6 +550,7 @@ def do_dashboard(
     export_path: Path | None,
     summary: chrome.RunSummary,
     target_hours_per_day: float | None = None,
+    canonical_path: Path | None = None,
 ) -> int:
     start = parse_iso_date(cfg.start_date, "start date")
     end = parse_iso_date(cfg.end_date, "end date")
@@ -557,6 +568,9 @@ def do_dashboard(
             warnings.append(message)
             status.log("warning", message)
 
+        def on_search(done: int, total: int) -> None:
+            status.update(f"Searching issues [{done}/{total}]")
+
         records, identity = dash.fetch_worklogs(
             client,
             start,
@@ -564,6 +578,7 @@ def do_dashboard(
             on_issues=on_issues,
             on_issue=on_issue,
             on_warning=on_warning,
+            on_search=on_search,
         )
         status.update(f"Fetched {len(records)} worklogs", worklogs=len(records))
 
@@ -584,6 +599,22 @@ def do_dashboard(
     if export_path is not None:
         dash.export(records, export_path)
         details.append(f"Written to {export_path}")
+    if canonical_path is not None:
+        # LIB-10: the shared shape, opt-in only — the historical export above
+        # keeps its exact fields.
+        rows = [
+            export.canonical_row(
+                issue=record.key,
+                summary=record.summary,
+                date=record.day.isoformat(),
+                hours=record.hours,
+                comment=record.comment,
+                author=identity.display_name,
+            )
+            for record in records
+        ]
+        export.write_canonical(rows, canonical_path)
+        details.append(f"Canonical rows written to {canonical_path}")
     if warnings:
         details.append(f"{len(warnings)} issues could not be read fully.")
 
@@ -988,6 +1019,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     export_path=args.export,
                     summary=summary,
                     target_hours_per_day=args.target_hours_per_day,
+                    canonical_path=args.export_canonical,
                 )
             if command == "config":
                 return do_config(console, cfg, args, config_path)

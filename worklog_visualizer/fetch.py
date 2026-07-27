@@ -151,7 +151,16 @@ def fetch_recent_worklogs(
         )
     if on_status is not None:
         on_status(f"Searching issues for {target_label}")
-    issues = client.search_issues(search_jql, [client.kb.field_id("summary")])
+
+    # LIB-2: surface the search's own pagination progress through the same
+    # status callback, so long searches show a live count instead of stalling.
+    def on_search(done: int, total: int) -> None:
+        if on_status is not None:
+            on_status(f"Searching issues for {target_label} [{done}/{total}]")
+
+    issues = client.search_issues(
+        search_jql, [client.kb.field_id("summary")], on_progress=on_search
+    )
 
     rows: list[dict[str, Any]] = []
     for i, issue in enumerate(issues, 1):
