@@ -63,6 +63,9 @@ Recurring meetings can repeat every week or every N weeks:
 Without an anchor the counting starts from the first week of the range, so pin
 one if the range is going to move.
 
+In the interactive session, ← goes back a level — out of a submenu, or out of a
+half-finished meeting — and Ctrl+C leaves cleanly from anywhere.
+
 Configuration lives at `~/.jira_worklog_manager.json`, the original path, so
 existing configs keep working.
 
@@ -117,6 +120,7 @@ Exit codes: `0` fine · `1` request failed · `2` auth or configuration problem 
    * dense bordered tables, long values truncated with a marker, never wrapped;
    * charts rendered in the terminal — a file is written only when an explicit
      `--export` flag is passed, and the terminal rendering still prints;
+   * ← goes back a level in any menu (`prompts.select(..., allow_back=True)`);
    * Ctrl+C exits cleanly with a summary of what completed;
    * `NO_COLOR` and dumb terminals degrade to plain ASCII.
 5. Write tests against `kb/fixtures`. No test may touch the network.

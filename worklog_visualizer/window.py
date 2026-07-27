@@ -61,7 +61,9 @@ def parse_ago(spec: str) -> tuple[Any, str]:
     human = f"{n} {label}{plural}"
     if kind == "td":
         return timedelta(**{attr: n}), human
-    return relativedelta(**{attr: n}), human
+    # Spelled out rather than unpacked: relativedelta's first positional is a
+    # date, so a **kwargs unpack is not statically checkable.
+    return (relativedelta(months=n) if attr == "months" else relativedelta(years=n)), human
 
 
 # Two accepted shapes for --date.

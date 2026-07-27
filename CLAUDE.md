@@ -68,6 +68,12 @@ including error, empty and malformed cases. The whole test suite runs off these.
   terminal), `charts` (Unicode bars, terminal-only), `prompts` (questionary via
   `unsafe_ask()` so Ctrl+C propagates). Build CLIs from these rather than
   hand-rolling, so the two tools cannot drift apart.
+* Menus: `prompts.select`/`checkbox` take `allow_back=True` to bind ← to the
+  `BACK` sentinel, and **validate their own answer** — anything that is not one
+  of the offered choices also becomes `BACK`. Call sites test with
+  `prompts.is_back(...)`, which covers `None` too. Both interactive loops catch
+  `Exception` around a menu action so one bad step returns to the menu instead of
+  ending the session.
 * Palette rule: every colour is a mid-luminance 256-colour value that reads on a
   **white** terminal as well as a black one. The pale ANSI basics (`yellow`,
   `cyan`), `dim`, and `white` are banned — a test enforces it — and `value`

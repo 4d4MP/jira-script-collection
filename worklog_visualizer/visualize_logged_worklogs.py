@@ -365,6 +365,9 @@ def interactive(
                 Choice("Quit", "quit"),
             ],
         )
+        if prompts.is_back(choice):
+            # Nothing above the top menu to go back to.
+            continue
         if choice == "quit":
             chrome.final(console, "info", "Session ended")
             return EXIT_OK
@@ -388,6 +391,9 @@ def interactive(
                 run_report(console, client, report, destination=destination, summary=summary)
         except TrackspaceError as exc:
             chrome.notice(console, "error", str(exc))
+        # A session must survive one bad step: report it and stay in the menu.
+        except Exception as exc:
+            chrome.notice(console, "error", f"{type(exc).__name__}: {exc}")
 
 
 def _validate_export_path(value: str) -> bool | str:
@@ -407,7 +413,10 @@ def _pick_window(console: Console, report: Report) -> Report:
             Choice("Custom datetime range", ("datetimes", "")),
             Choice("Back", ("back", "")),
         ],
+        allow_back=True,
     )
+    if prompts.is_back(choice):
+        return report
     kind, spec = choice
     if kind == "back":
         return report
@@ -463,8 +472,9 @@ def _pick_user(console: Console, client: TrackspaceClient, report: Report) -> Re
             Choice("Someone else…", "other"),
             Choice("Back", "back"),
         ],
+        allow_back=True,
     )
-    if choice == "back":
+    if prompts.is_back(choice) or choice == "back":
         return report
     if choice == "me":
         return replace(report, user=None)

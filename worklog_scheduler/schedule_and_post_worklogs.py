@@ -552,6 +552,9 @@ def interactive(
             ],
         )
 
+        if prompts.is_back(choice):
+            # Nothing above the top menu to go back to.
+            continue
         if choice == "quit":
             break
         try:
@@ -591,6 +594,8 @@ def interactive(
                 chrome.notice(console, "success", f"Saved to {config_path}")
         except TrackspaceError as exc:
             chrome.notice(console, "error", str(exc))
+        except Exception as exc:
+            chrome.notice(console, "error", f"{type(exc).__name__}: {exc}")
 
     if save_on_exit:
         cfg.save(config_path)
@@ -611,8 +616,8 @@ def _edit_recurring(cfg: ScheduleConfig) -> None:
             for index, m in enumerate(cfg.recurring)
         ]
         choices += [Choice("+ Add a recurring meeting", "add"), Choice("Back", "back")]
-        selection = prompts.select("Recurring meetings", choices=choices)
-        if selection == "back":
+        selection = prompts.select("Recurring meetings", choices=choices, allow_back=True)
+        if prompts.is_back(selection) or selection == "back":
             return
         default_anchor = _default_anchor(cfg)
         if selection == "add":
@@ -623,6 +628,7 @@ def _edit_recurring(cfg: ScheduleConfig) -> None:
         action = prompts.select(
             "This meeting",
             choices=[Choice("Edit", "edit"), Choice("Delete", "delete"), Choice("Back", "back")],
+            allow_back=True,
         )
         if action == "edit":
             meeting = _prompt_recurring(cfg.recurring[int(selection)], default_anchor)
@@ -650,21 +656,27 @@ def _prompt_recurring(
             Choice(name, index, checked=index in base.weekdays)
             for index, name in enumerate(WEEKDAY_NAMES)
         ],
+        allow_back=True,
     )
-    if not selected:
+    # ← (or an empty selection) backs out of the wizard without adding anything.
+    if not isinstance(selected, list) or not selected:
         return None
-    interval = int(
-        prompts.select(
-            "How often",
-            choices=[
-                Choice("Every week", 1),
-                Choice("Every other week", 2),
-                Choice("Every 3 weeks", 3),
-                Choice("Every 4 weeks", 4),
-            ],
-            default=base.interval_weeks if base.interval_weeks in (1, 2, 3, 4) else 1,
-        )
+
+    repeats = prompts.select(
+        "How often",
+        choices=[
+            Choice("Every week", 1),
+            Choice("Every other week", 2),
+            Choice("Every 3 weeks", 3),
+            Choice("Every 4 weeks", 4),
+        ],
+        default=base.interval_weeks if base.interval_weeks in (1, 2, 3, 4) else 1,
+        allow_back=True,
     )
+    if prompts.is_back(repeats):
+        return None
+    interval = int(repeats)
+
     anchor = ""
     if interval > 1:
         anchor = prompts.text(
@@ -699,8 +711,8 @@ def _edit_oneoffs(cfg: ScheduleConfig) -> None:
             for index, o in enumerate(cfg.oneoffs)
         ]
         choices += [Choice("+ Add a one-off meeting", "add"), Choice("Back", "back")]
-        selection = prompts.select("One-off meetings", choices=choices)
-        if selection == "back":
+        selection = prompts.select("One-off meetings", choices=choices, allow_back=True)
+        if prompts.is_back(selection) or selection == "back":
             return
         if selection == "add":
             meeting = _prompt_oneoff(default_date=_default_oneoff_date(cfg))
@@ -710,6 +722,7 @@ def _edit_oneoffs(cfg: ScheduleConfig) -> None:
         action = prompts.select(
             "This meeting",
             choices=[Choice("Edit", "edit"), Choice("Delete", "delete"), Choice("Back", "back")],
+            allow_back=True,
         )
         if action == "edit":
             meeting = _prompt_oneoff(current=cfg.oneoffs[int(selection)])
@@ -760,8 +773,8 @@ def _edit_excludes(console: Console, cfg: ScheduleConfig) -> None:
             Choice("Clear all", "clear"),
             Choice("Back", "back"),
         ]
-        selection = prompts.select("Excluded dates", choices=choices)
-        if selection == "back":
+        selection = prompts.select("Excluded dates", choices=choices, allow_back=True)
+        if prompts.is_back(selection) or selection == "back":
             return
         if selection == "add":
             value = prompts.text("Date (YYYY-MM-DD)", validate=prompts.validate_date)
@@ -785,8 +798,9 @@ def _edit_range(console: Console, cfg: ScheduleConfig) -> None:
             Choice("Custom…", "custom"),
             Choice("Back", "back"),
         ],
+        allow_back=True,
     )
-    if selection == "back":
+    if prompts.is_back(selection) or selection == "back":
         return
     if selection == "custom":
         start = prompts.text(

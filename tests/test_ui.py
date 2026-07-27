@@ -7,7 +7,7 @@ import io
 import pytest
 from rich.console import Console
 
-from trackspace.ui import charts, chrome, tables, theme
+from trackspace.ui import charts, chrome, prompts, tables, theme
 
 
 def recording_console(width: int = 120) -> Console:
@@ -192,3 +192,50 @@ def test_flex_width_keeps_a_row_inside_the_terminal() -> None:
     width = tables.flex_width(console, [18, 7, 7, 10, 10])
     assert width >= 20
     assert 18 + 7 + 7 + 10 + 10 + width <= console.width
+
+
+# ---- menu navigation -------------------------------------------------------
+def test_back_sentinel_is_falsy_and_recognised() -> None:
+    assert not prompts.BACK
+    assert prompts.is_back(prompts.BACK)
+    assert prompts.is_back(None)  # a prompt that answered nothing means "go back"
+    assert not prompts.is_back("preview")
+    assert not prompts.is_back(0)  # a real choice value, however falsy
+
+
+def test_an_answer_we_never_offered_becomes_back() -> None:
+    """questionary has been seen to return a value outside the choices; the menu
+    must land on BACK rather than hand the caller something it cannot use."""
+    choices = [prompts.Choice("Every week", 1), prompts.Choice("Every other week", 2)]
+    assert prompts.validated(1, choices) == 1
+    assert prompts.validated(2, choices) == 2
+    assert prompts.validated("", choices) is prompts.BACK
+    assert prompts.validated(None, choices) is prompts.BACK
+    assert prompts.validated(7, choices) is prompts.BACK
+    assert prompts.validated(prompts.BACK, choices) is prompts.BACK
+
+
+def test_plain_string_choices_validate_too() -> None:
+    assert prompts.validated("b", ["a", "b"]) == "b"
+    assert prompts.validated("c", ["a", "b"]) is prompts.BACK
+    assert prompts.choice_values([prompts.Choice("t", 5), "raw"]) == [5, "raw"]
+
+
+def test_left_arrow_is_bound_only_when_back_is_allowed() -> None:
+    import questionary
+    from prompt_toolkit.keys import Keys
+
+    def left_bindings(question: object) -> list[object]:
+        registry = question.application.key_bindings  # type: ignore[attr-defined]
+        return [b for b in registry.bindings if Keys.Left in b.keys]
+
+    question = questionary.select("pick", choices=["a", "b"])
+    before = len(left_bindings(question))
+    prompts._bind_back(question)
+    assert len(left_bindings(question)) == before + 1
+
+
+def test_back_instruction_is_shown_when_offered() -> None:
+    assert "back" in (prompts._instruction(None, True) or "")
+    assert prompts._instruction("(pick one)", True) == "(pick one)  ·  ← back"
+    assert prompts._instruction("(pick one)", False) == "(pick one)"
