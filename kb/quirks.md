@@ -97,15 +97,13 @@ works. (`work_log.py:74,144-147`)
 No backoff, no 429 handling, no connection-error recovery. The shared client adds
 this for GETs. Any claim about how this instance rate-limits is **inferred**.
 
-### 16. The two tools disagree about a malformed `started`, on purpose
+### 16. A malformed `started` is skipped, not fatal
 
-The scheduler skips an unparseable timestamp, warns, and carries on. The
-visualiser lets `datetime.fromisoformat` raise, which ends the run. That is the
-original behaviour of each script and it is preserved: the visualiser is a
-single-shot report where a corrupt entry should be loud, and it was left
-functionally untouched. If Trackspace ever starts emitting a `started` shape
-neither reader understands, the visualiser is where you will find out.
-(`work.py:416`, `worklog_scheduler/dashboard.py`)
+The original visualiser let `datetime.fromisoformat` raise, ending the run on one
+corrupt entry (`work.py:416`); the scheduler skipped and warned. Both tools now
+skip and warn, because an interactive session must survive one bad row. The
+warning count is surfaced in the closing summary, so a `started` shape neither
+reader understands is still visible rather than silent.
 
 ### 17. The visualiser's docstring says `lhsystems.int`, the code says `lhsystems.com`
 

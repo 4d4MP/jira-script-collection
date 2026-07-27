@@ -11,7 +11,7 @@ instance is Trackspace.
 kb/                    facts about the instance + offline fixtures
 trackspace/            shared library: client, auth, errors, CLI UX
 worklog_scheduler/     plan, preview and post meeting worklogs
-worklog_visualizer/    render what you logged over a window as a PNG
+worklog_visualizer/    show what you logged over a window
 tests/                 runs entirely against kb/fixtures — no network, no PAT
 ```
 
@@ -57,21 +57,34 @@ existing configs keep working.
 Exit codes: `0` fine · `1` some worklogs failed · `2` configuration problem ·
 `130` cancelled with Ctrl+C.
 
-### `worklog_visualizer` — a PNG report of a time window
+### `worklog_visualizer` — what you logged over a time window
 
 ```bash
-python -m worklog_visualizer                                 # last 30 days
-python -m worklog_visualizer --ago 4M --output quarter.png
-python -m worklog_visualizer --date 2026_04_01-2026_04_30
-python -m worklog_visualizer --user colleague.name
+python -m worklog_visualizer                                 # interactive session
+python -m worklog_visualizer report --ago 7d
+python -m worklog_visualizer report --date 2026_04_01-2026_04_30
+python -m worklog_visualizer report --ago 4M --user colleague.name
+python -m worklog_visualizer report --ago 1Y --export quarter.png
 ```
 
-**This tool is deliberately unchanged in behaviour.** It now calls Trackspace
-through the shared client and takes its endpoints, JQL and page sizes from `/kb`,
-but its flags, its stderr progress lines, its figures and its PNG-first output are
-exactly what they were. It is therefore the one CLI in the repo that does not
-follow the interactive/terminal-rendering contract below — a preservation
-decision, not an oversight.
+The report renders in the terminal: hours stacked by ticket across the timeline
+(bucketed into weeks, then months, as the window grows), a daily sparkline, the
+top tickets grouped by title with IP addresses collapsed, a per-ticket table, and
+the summary figures.
+
+A file is written **only** when `--export` names one — `.png` / `.pdf` / `.svg`
+for the multi-panel matplotlib image, `.json` / `.csv` for the rows behind it —
+and the terminal report still prints alongside it. `--show` additionally opens
+the image in a window. The old `--output PATH` spelling still exports, and
+`--no-show` is accepted and ignored (nothing opens unless you ask for it).
+
+Windows: `--ago 5m|10h|2d|4M|1Y` (case-sensitive units), `--date` as
+`YYYY_MM_DD-YYYY_MM_DD` or `YYYYMMDD-YYYYMMDD`, or `--datetime` down to the
+minute. Absolute values are read in local time; `worklogDate` is day-granular, so
+sub-day windows are filtered client-side.
+
+Exit codes: `0` fine · `1` request failed · `2` auth or configuration problem ·
+`130` cancelled with Ctrl+C.
 
 ## Adding a tool
 
@@ -119,7 +132,9 @@ carries a one-line justification at the point of use.
 | `work_log.py` — Tkinter worklog manager + matplotlib dashboard | `worklog_scheduler/schedule_and_post_worklogs.py` |
 | `work.py` (self-titled `visualize_jira_worklogs.py`) | `worklog_visualizer/visualize_logged_worklogs.py` |
 
-The scheduler was rewritten from a desktop GUI into a terminal CLI. Its
-behaviour was not: same schedule expansion, same dry-run default, same posting
-semantics, same dashboard figures, same config file. `kb/quirks.md` records the
-things that look odd and are load-bearing.
+The scheduler was rewritten from a desktop GUI into a terminal CLI, and the
+visualiser from a PNG-first script into an interactive one. What each tool
+*computes* is unchanged in both cases: the same schedule expansion, dry-run
+default and posting semantics; the same window parsing, author filtering and
+summary figures; the same matplotlib figure when you ask for an image.
+`kb/quirks.md` records the things that look odd and are load-bearing.

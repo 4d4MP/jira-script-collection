@@ -195,7 +195,7 @@ def print_preview(console: Console, entries: Sequence[WorklogEntry]) -> None:
             tables.Column("Day", width=3),
             tables.Column("Time", width=5),
             tables.Column("Duration", width=8, justify="right"),
-            tables.Column("Comment", width=60, flex=True),
+            tables.Column("Comment", width=tables.flex_width(console, [10, 3, 5, 8])),
         ],
         [
             (
@@ -225,7 +225,7 @@ def print_schedule(console: Console, cfg: ScheduleConfig) -> None:
                 tables.Column("Days", width=14),
                 tables.Column("Time", width=5),
                 tables.Column("Duration", width=8, justify="right"),
-                tables.Column("Comment", width=60, flex=True),
+                tables.Column("Comment", width=tables.flex_width(console, [14, 5, 8])),
             ],
             [
                 (m.weekdays_str(), m.time_str(), f"{m.duration_min} min", m.comment)
@@ -243,7 +243,7 @@ def print_schedule(console: Console, cfg: ScheduleConfig) -> None:
                 tables.Column("Date", width=10),
                 tables.Column("Time", width=5),
                 tables.Column("Duration", width=8, justify="right"),
-                tables.Column("Comment", width=60, flex=True),
+                tables.Column("Comment", width=tables.flex_width(console, [10, 5, 8])),
             ],
             [(o.date, o.time_str(), f"{o.duration_min} min", o.comment) for o in cfg.oneoffs],
             title="One-off meetings",

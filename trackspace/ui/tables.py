@@ -40,6 +40,17 @@ def truncate(value: str, width: int | None, *, console: Console | None = None) -
     return value[:keep] + marker
 
 
+def flex_width(console: Console, fixed_widths: Sequence[int], *, minimum: int = 20) -> int:
+    """Width for the one variable column, so a row still fits the terminal.
+
+    Rich would otherwise shrink every column proportionally, which turns a dense
+    table into a grid of stumps. Sizing the one prose column instead keeps the
+    ids, counts and dates intact.
+    """
+    overhead = 3 * (len(fixed_widths) + 1) + 1
+    return max(minimum, console.width - overhead - sum(fixed_widths))
+
+
 def render_table(
     console: Console,
     columns: Sequence[Column],

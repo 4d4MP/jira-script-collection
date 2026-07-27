@@ -1,31 +1,21 @@
-"""Visualize the work YOU logged on Trackspace tickets across a rolling time
-window ending at "now". Defaults to the last 30 days.
+#!/usr/bin/env python3
+"""Trackspace worklog visualiser.
 
-Authenticates against Trackspace using a Personal Access Token. No CSV input.
+Shows the work you (or a colleague) logged across a time window: hours stacked by
+ticket over the timeline, the top tickets grouped by title with IP addresses
+collapsed, a per-ticket table, and the summary figures.
 
-SETUP
------
-The script expects your Trackspace PAT in the TRACKSPACE_PAT env var:
+Interactive by default::
 
-    export TRACKSPACE_PAT="xxxxxxxxxxxxxxxxxxxx"
+    python -m worklog_visualizer
 
-Defaults that you can override via env vars if needed:
-    JIRA_BASE_URL  (default: https://trackspace.lhsystems.com)
-    JIRA_AUTH_TYPE (default: bearer)
-    JIRA_API_VERSION (default: 2  — Jira Server uses v2, Cloud can use 3)
+Fully scriptable too::
 
-USAGE
------
-    python -m worklog_visualizer                            # last 30 days
-    python -m worklog_visualizer --ago 7d                   # last 7 days
-    python -m worklog_visualizer --ago 4M                   # last 4 months
-    python -m worklog_visualizer --ago 1Y --output yr.png   # last year
-    python -m worklog_visualizer --date 2026_04_01-2026_04_30
-    python -m worklog_visualizer --date 20260401-20260430
-    python -m worklog_visualizer --datetime 2026_04_01-09:00-2026_04_01-17:30
-    python -m worklog_visualizer --user colleague.name      # someone else
+    python -m worklog_visualizer report --ago 7d
+    python -m worklog_visualizer report --date 2026_04_01-2026_04_30 --user colleague.name
+    python -m worklog_visualizer report --ago 1Y --export year.png
 
-Three mutually exclusive ways to choose the time window (default: --ago 30d):
+Three mutually exclusive ways to choose the window (default: --ago 30d):
 
     --ago <N><unit>     rolling window ending at "now"
                         units (case-sensitive):
@@ -44,543 +34,124 @@ Three mutually exclusive ways to choose the time window (default: --ago 30d):
 
 Absolute --date / --datetime values are interpreted in your local timezone.
 
-OUTPUT
-------
-A multi-panel PNG (and an interactive window if a display is available)
-showing daily totals stacked by ticket, top tickets of the period,
-and summary stats — covering the requested time window.
+The report renders in the terminal. A file is written only when ``--export`` (or
+the legacy ``--output``) names one: ``.png`` / ``.pdf`` / ``.svg`` gets the
+multi-panel image, ``.json`` / ``.csv`` gets the rows behind it. Either way the
+terminal report still prints.
 
-NOTE ON SCOPE
--------------
-This tool is deliberately unchanged in behaviour from the original script. Its
-HTTP calls now go through ``trackspace.TrackspaceClient`` and its endpoints, JQL
-and page sizes come from ``/kb``, but the arguments, the output, the PNG-first
-rendering and every printed line are exactly as they were.
+Auth comes from TRACKSPACE_PAT. These env vars override the defaults from /kb:
+JIRA_BASE_URL, JIRA_AUTH_TYPE, JIRA_API_VERSION, JIRA_EMAIL (basic auth only).
 """
 
 from __future__ import annotations
 
 import argparse
-import contextlib
+import csv
+import json
 import os
-import re
 import sys
-from datetime import UTC, date, datetime, time, timedelta
+from dataclasses import dataclass, replace
+from datetime import date, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
-import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
-from dateutil.relativedelta import relativedelta
-from matplotlib.figure import Figure
-from matplotlib.patches import Patch
+from rich.console import Console
 
-from trackspace.auth import read_pat
+from trackspace.auth import auth_status, read_pat
 from trackspace.client import TrackspaceClient
-from trackspace.errors import AuthError, ForbiddenError
-from trackspace.kb import load_kb
+from trackspace.errors import (
+    AuthError,
+    ConfigurationError,
+    ForbiddenError,
+    TrackspaceError,
+)
+from trackspace.kb import KnowledgeBase, load_kb
+from trackspace.ui import chrome, prompts
+from trackspace.ui.prompts import Choice
 
-# Default rolling window when no time-window flag is given.
-DEFAULT_AGO = "30d"
+from . import terminal
+from .fetch import UserNotFoundError, fetch_recent_worklogs
+from .window import (
+    DEFAULT_AGO,
+    LOCAL_TZ,
+    parse_ago,
+    parse_datetime_range,
+    resolve_window,
+    window_from_ago,
+    window_from_dates,
+)
 
+TOOL_NAME = "Trackspace worklog visualiser"
 USER_AGENT = "trackspace-worklog-visualizer"
 
-# Absolute --date / --datetime values are interpreted in this timezone.
-# Picks up whatever the OS thinks "local" is, which is what the user means
-# when they type a wall-clock date or datetime.
-LOCAL_TZ = datetime.now(UTC).astimezone().tzinfo
+EXIT_OK = 0
+EXIT_FAILED = 1
+EXIT_CONFIG = 2
 
+IMAGE_SUFFIXES = {".png", ".pdf", ".svg"}
+DATA_SUFFIXES = {".json", ".csv"}
 
-# ---------------------------------------------------------------------------
-# --ago parsing
-# ---------------------------------------------------------------------------
-
-# Maps the unit suffix to (offset_kind, attr, singular_label).
-#   td = datetime.timedelta, rd = dateutil.relativedelta.relativedelta
-_AGO_UNITS: dict[str, tuple[str, str, str]] = {
-    "m": ("td", "minutes", "minute"),
-    "h": ("td", "hours", "hour"),
-    "d": ("td", "days", "day"),
-    "M": ("rd", "months", "month"),
-    "Y": ("rd", "years", "year"),
-}
-
-
-def parse_ago(spec: str) -> tuple[Any, str]:
-    """Parse '5m', '10h', '2d', '4M', '1Y' → (offset, human label).
-
-    Units are case-sensitive: lowercase 'm' is minutes, uppercase 'M' is months.
-    Returns either a timedelta (for m/h/d) or a relativedelta (for M/Y) so
-    calendar arithmetic stays correct across month/year boundaries.
-    """
-    s = spec.strip()
-    m = re.fullmatch(r"(\d+)\s*([a-zA-Z])", s)
-    if not m:
-        raise argparse.ArgumentTypeError(
-            f"invalid --ago value: {spec!r}. "
-            "expected <number><unit>, e.g. 5m, 10h, 2d, 4M, 1Y "
-            "(units: m=minutes, h=hours, d=days, M=months, Y=years)"
-        )
-    n, unit = int(m.group(1)), m.group(2)
-    if n <= 0:
-        raise argparse.ArgumentTypeError(f"--ago value must be positive, got {spec!r}")
-    if unit not in _AGO_UNITS:
-        raise argparse.ArgumentTypeError(
-            f"unknown unit {unit!r} in --ago value {spec!r}. "
-            "valid units: m, h, d, M, Y (case-sensitive)"
-        )
-    kind, attr, label = _AGO_UNITS[unit]
-    plural = "" if n == 1 else "s"
-    human = f"{n} {label}{plural}"
-    if kind == "td":
-        return timedelta(**{attr: n}), human
-    return relativedelta(**{attr: n}), human
-
-
-# Two accepted shapes for --date.
-_DATE_UNDERSCORE_RE = re.compile(r"^(\d{4})_(\d{2})_(\d{2})\s*-\s*(\d{4})_(\d{2})_(\d{2})$")
-_DATE_COMPACT_RE = re.compile(r"^(\d{4})(\d{2})(\d{2})\s*-\s*(\d{4})(\d{2})(\d{2})$")
-
-
-def parse_date_range(spec: str) -> tuple[date, date]:
-    """Parse 'YYYY_MM_DD-YYYY_MM_DD' or 'YYYYMMDD-YYYYMMDD' → (start, end).
-
-    Both endpoints are inclusive. Raises ArgumentTypeError on bad input.
-    """
-    s = spec.strip()
-    for pattern in (_DATE_UNDERSCORE_RE, _DATE_COMPACT_RE):
-        m = pattern.match(s)
-        if m:
-            try:
-                start = date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
-                end = date(int(m.group(4)), int(m.group(5)), int(m.group(6)))
-            except ValueError as e:
-                raise argparse.ArgumentTypeError(f"invalid --date value: {spec!r}: {e}") from e
-            if start > end:
-                raise argparse.ArgumentTypeError(
-                    f"--date: start {start.isoformat()} is after end {end.isoformat()}"
-                )
-            return start, end
-    raise argparse.ArgumentTypeError(
-        f"invalid --date value: {spec!r}. expected "
-        "YYYY_MM_DD-YYYY_MM_DD or YYYYMMDD-YYYYMMDD "
-        "(e.g. 2026_04_01-2026_04_30 or 20260401-20260430)"
-    )
-
-
-# YYYY_MM_DD-hh:mm-YYYY_MM_DD-hh:mm — three hyphens total, the middle one
-# separates the two datetimes. Anchored regex resolves the ambiguity.
-_DATETIME_RE = re.compile(
-    r"^(\d{4})_(\d{2})_(\d{2})\s*-\s*(\d{2}):(\d{2})"
-    r"\s*-\s*"
-    r"(\d{4})_(\d{2})_(\d{2})\s*-\s*(\d{2}):(\d{2})$"
+#: Presets offered in the interactive window picker.
+WINDOW_PRESETS = (
+    ("Last 7 days", "7d"),
+    ("Last 30 days", "30d"),
+    ("Last 90 days", "90d"),
+    ("Last 12 months", "12M"),
 )
 
 
-def parse_datetime_range(spec: str) -> tuple[datetime, datetime]:
-    """Parse 'YYYY_MM_DD-hh:mm-YYYY_MM_DD-hh:mm' → (start, end), naive.
+@dataclass(frozen=True)
+class Report:
+    """One rendering of one window for one user."""
 
-    Returned datetimes are timezone-naive; callers should attach LOCAL_TZ.
-    Both endpoints are inclusive. Raises ArgumentTypeError on bad input.
-    """
-    s = spec.strip()
-    m = _DATETIME_RE.match(s)
-    if not m:
-        raise argparse.ArgumentTypeError(
-            f"invalid --datetime value: {spec!r}. expected "
-            "YYYY_MM_DD-hh:mm-YYYY_MM_DD-hh:mm "
-            "(e.g. 2026_04_01-09:00-2026_04_01-17:30)"
-        )
-    parts = list(map(int, m.groups()))
-    try:
-        start = datetime(parts[0], parts[1], parts[2], parts[3], parts[4])  # noqa: DTZ001
-        end = datetime(parts[5], parts[6], parts[7], parts[8], parts[9])  # noqa: DTZ001
-    except ValueError as e:
-        raise argparse.ArgumentTypeError(f"invalid --datetime value: {spec!r}: {e}") from e
-    if start > end:
-        raise argparse.ArgumentTypeError(
-            f"--datetime: start {start.isoformat()} is after end {end.isoformat()}"
-        )
-    return start, end
+    start: datetime
+    end: datetime
+    label: str
+    user: str | None
 
 
 # ---------------------------------------------------------------------------
-# Title normalisation
+# Argument parsing
 # ---------------------------------------------------------------------------
-
-# IPv4, optionally with /CIDR mask or :port.
-_IPV4_RE = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}(?:/\d{1,2})?(?::\d{1,5})?\b")
-# IPv6 — covers the full form and any '::' compressed form.
-# Uses negative lookarounds (instead of \b) because ':' isn't a word char,
-# so we manually exclude hex/colon neighbours.
-_IPV6_RE = re.compile(
-    r"(?<![0-9a-fA-F:])"
-    r"(?:"
-    r"(?:[0-9a-fA-F]{1,4}:){2,7}[0-9a-fA-F]{1,4}"  # full / non-:: form
-    r"|"
-    r"(?:(?:[0-9a-fA-F]{1,4}:)*[0-9a-fA-F]{1,4})?"  # optional left part
-    r"::"
-    r"(?:(?:[0-9a-fA-F]{1,4}:)*[0-9a-fA-F]{1,4})?"  # optional right part
-    r")"
-    r"(?![0-9a-fA-F:])"
-)
-
-
-def normalize_title(title: str) -> str:
-    """Collapse IP addresses in an alert title to '<IP>'.
-
-    Lets us group tickets like 'Suspicious login from 192.168.1.10' and
-    'Suspicious login from 10.0.0.5' into the same bar in the top-tickets
-    panel — they're the same alert type, just different sources.
-    """
-    if not title:
-        return ""
-    out = _IPV4_RE.sub("<IP>", title)
-    out = _IPV6_RE.sub("<IP>", out)
-    # Collapse any whitespace fallout from substitution.
-    out = re.sub(r"\s+", " ", out).strip()
-    return out
-
-
-# ---------------------------------------------------------------------------
-# Data fetching
-# ---------------------------------------------------------------------------
-
-
-def fetch_recent_worklogs(
-    client: TrackspaceClient,
-    user_identifier: str | None,
-    start_dt: datetime,
-    end_dt: datetime,
-) -> pd.DataFrame:
-    """Return a DataFrame with columns: date, ticket_id, summary, hours, author.
-
-    Covers worklogs whose `started` instant lies in [start_dt, end_dt],
-    using full datetime precision so sub-day windows (e.g. last 5 minutes)
-    work correctly. start_dt and end_dt must be timezone-aware.
-    """
-    start_ms = int(start_dt.timestamp() * 1000)
-
-    # Resolve which user we're filtering on. Jira Server identifies users by
-    # `name` / `key`; Cloud uses `accountId`. We collect any identifier we have
-    # and accept a match against any of them. For --user, look the person up
-    # via /user/search so the caller can pass username, email, or display name.
-    if user_identifier is None:
-        user_obj = client.myself()
-        jql_pattern = "worklogs_by_current_user_in_range"
-        jql_extra: dict[str, str] = {}
-    else:
-        found = client.find_user(user_identifier)
-        if found is None:
-            raise SystemExit(
-                f"No user found matching '{user_identifier}'. "
-                "Try a username, email, or part of their display name."
-            )
-        user_obj = found
-        canonical = user_obj.get("name") or user_obj.get("accountId")
-        jql_pattern = "worklogs_by_named_user_in_range"
-        jql_extra = {"username": str(canonical)}
-
-    target_ids = {
-        v.lower()
-        for v in [
-            user_obj.get("name"),
-            user_obj.get("key"),
-            user_obj.get("accountId"),
-            user_obj.get("emailAddress"),
-        ]
-        if v
-    }
-    target_label = (
-        user_obj.get("displayName") or user_obj.get("emailAddress") or user_identifier or "you"
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="worklog-visualizer",
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+    _add_report_flags(parser)
+    subparsers = parser.add_subparsers(dest="command")
+    _add_report_flags(subparsers.add_parser("report", help="render one report and exit"))
+    return parser
 
-    # JQL's worklogDate function only takes ISO dates (no time component),
-    # so we widen to the calendar-day bounds and apply the precise datetime
-    # filter in-loop after fetching individual worklog entries.
-    start_date = start_dt.date()
-    end_date = end_dt.date()
-    jql = client.kb.jql(
-        jql_pattern,
-        start_date=start_date.isoformat(),
-        end_date=end_date.isoformat(),
-        **jql_extra,
+
+def _add_report_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--user", help="username of another user (default: yourself)")
+    parser.add_argument(
+        "--export",
+        type=Path,
+        metavar="PATH",
+        help="also write the report to PATH (.png/.pdf/.svg image, or .json/.csv rows)",
     )
-    print(
-        f"→ Searching issues for {target_label} "
-        f"({start_dt.isoformat(timespec='seconds')} → "
-        f"{end_dt.isoformat(timespec='seconds')})...",
-        file=sys.stderr,
-    )
-    issues = client.search_issues(jql, [client.kb.field_id("summary")])
-    print(f"  found {len(issues)} candidate issue(s)", file=sys.stderr)
-
-    rows: list[dict[str, Any]] = []
-    for i, issue in enumerate(issues, 1):
-        key = issue["key"]
-        summary = issue["fields"].get("summary", "")
-        print(f"  [{i}/{len(issues)}] fetching worklogs for {key}...", file=sys.stderr)
-        for wl in client.issue_worklogs(key, started_after_ms=start_ms):
-            author = wl.get("author", {})
-            author_ids = {
-                v.lower()
-                for v in [
-                    author.get("name"),
-                    author.get("key"),
-                    author.get("accountId"),
-                    author.get("emailAddress"),
-                ]
-                if v
-            }
-            if not (author_ids & target_ids):
-                continue
-            started = wl.get("started")  # e.g. 2026-04-15T09:30:00.000+0000
-            if not started:
-                continue
-            wl_dt = datetime.fromisoformat(started.replace("Z", "+00:00"))
-            # Comparing tz-aware datetimes works regardless of source offset.
-            if not (start_dt <= wl_dt <= end_dt):
-                continue
-            seconds = wl.get("timeSpentSeconds", 0)
-            rows.append(
-                {
-                    "date": wl_dt.date(),
-                    "ticket_id": key,
-                    "summary": summary,
-                    "hours": round(seconds / 3600, 3),
-                    "author": author.get("displayName", ""),
-                }
-            )
-
-    df = pd.DataFrame(rows, columns=["date", "ticket_id", "summary", "hours", "author"])
-    return df
-
-
-# ---------------------------------------------------------------------------
-# Plotting
-# ---------------------------------------------------------------------------
-
-
-def build_figure(
-    df: pd.DataFrame, start_dt: datetime, end_dt: datetime, who: str, window_label: str
-) -> Figure:
-    """Three-panel figure: stacked daily bars + top tickets + summary."""
-    plt.rcParams.update(
-        {
-            "font.family": "DejaVu Sans",
-            "axes.spines.top": False,
-            "axes.spines.right": False,
-            "axes.titleweight": "bold",
-            "axes.titlesize": 12,
-        }
-    )
-
-    start_date = start_dt.date()
-    end_date = end_dt.date()
-    span_days = (end_date - start_date).days + 1
-    all_days = [start_date + timedelta(days=i) for i in range(span_days)]
-
-    if df.empty:
-        pivot = pd.DataFrame(0.0, index=all_days, columns=[])
-    else:
-        pivot = df.pivot_table(
-            index="date", columns="ticket_id", values="hours", aggfunc="sum", fill_value=0
-        ).reindex(all_days, fill_value=0)
-        # Largest tickets at the bottom of the stack
-        pivot = pivot[pivot.sum().sort_values(ascending=False).index]
-
-    fig = plt.figure(figsize=(14, 8.5), constrained_layout=True)
-    gs = fig.add_gridspec(2, 3, height_ratios=[1.6, 1])
-
-    # --- Panel 1: daily stacked bars ---------------------------------------
-    ax1 = fig.add_subplot(gs[0, :])
-    cmap = plt.get_cmap("tab20")
-    colors = [cmap(i % 20) for i in range(max(1, len(pivot.columns)))]
-
-    x = np.arange(len(all_days))
-    bottom = np.zeros(len(all_days))
-    for ticket, color in zip(pivot.columns, colors, strict=False):
-        vals = pivot[ticket].to_numpy()
-        ax1.bar(x, vals, bottom=bottom, color=color, edgecolor="white", linewidth=0.6, label=ticket)
-        bottom += vals
-
-    # Shade weekends
-    for i, d in enumerate(all_days):
-        if d.weekday() >= 5:
-            ax1.axvspan(i - 0.5, i + 0.5, color="#f4f4f4", zorder=0)
-
-    # "Today" marker (end of window)
-    if end_date in all_days:
-        idx = all_days.index(end_date)
-        ax1.axvline(idx, color="#d62728", linestyle="--", linewidth=1, alpha=0.7)
-
-    # Reference line: average on active days only (zero days excluded)
-    daily_totals = pivot.sum(axis=1).to_numpy() if not pivot.empty else np.array([0])
-    active = daily_totals[daily_totals > 0]
-    if len(active):
-        avg = active.mean()
-        ax1.axhline(avg, color="#555", linestyle=":", linewidth=1, alpha=0.7)
-        ax1.text(
-            len(all_days) - 0.5,
-            avg,
-            f"  avg active day: {avg:.1f}h",
-            fontsize=8,
-            color="#555",
-            va="bottom",
-            ha="right",
-        )
-
-    # X-axis: aim for ~25 visible labels max so long windows stay readable.
-    # Always label the first tick, the last tick, and the 1st of any month.
-    target_labels = 25
-    step = max(1, span_days // target_labels)
-    tick_labels = []
-    for i, d in enumerate(all_days):
-        if i == 0 or i == len(all_days) - 1 or d.day == 1:
-            tick_labels.append(d.strftime("%-d %b"))
-        elif i % step == 0:
-            tick_labels.append(str(d.day))
-        else:
-            tick_labels.append("")
-    ax1.set_xticks(x)
-    ax1.set_xticklabels(
-        tick_labels,
-        fontsize=8,
-        rotation=45 if span_days > 60 else 0,
-        ha="right" if span_days > 60 else "center",
-    )
-    ax1.set_xlim(-0.6, len(all_days) - 0.4)
-    ax1.set_ylabel("hours logged")
-    title_range = f"{start_dt.strftime('%-d %b %Y %H:%M')} – {end_dt.strftime('%-d %b %Y %H:%M')}"
-    ax1.set_title(
-        f"Trackspace worklogs — {window_label}   ·   {title_range}   ·   {who}",
-        loc="left",
-    )
-    ax1.grid(axis="y", linestyle="-", linewidth=0.5, alpha=0.3)
-    ax1.set_axisbelow(True)
-
-    # Compact legend (top N tickets)
-    top_n = 8
-    if len(pivot.columns):
-        handles = [
-            Patch(facecolor=colors[i], label=pivot.columns[i])
-            for i in range(min(top_n, len(pivot.columns)))
-        ]
-        extra = len(pivot.columns) - top_n
-        if extra > 0:
-            handles.append(Patch(facecolor="#cccccc", label=f"+{extra} more"))
-        ax1.legend(
-            handles=handles,
-            loc="upper left",
-            bbox_to_anchor=(1.005, 1.0),
-            frameon=False,
-            fontsize=8,
-            title="tickets",
-            title_fontsize=8,
-        )
-
-    # --- Panel 2: top tickets bar (grouped by normalized title) -----------
-    ax2 = fig.add_subplot(gs[1, :2])
-    if df.empty:
-        ax2.text(
-            0.5,
-            0.5,
-            f"no worklogs found in the {window_label}",
-            ha="center",
-            va="center",
-            color="#888",
-        )
-        ax2.set_axis_off()
-    else:
-        # Group by title with IPs collapsed, so the same alert type across
-        # different source/dest IPs lands in a single bar.
-        df_grouped = df.copy()
-        df_grouped["title_key"] = df_grouped["summary"].apply(normalize_title)
-        agg = (
-            df_grouped.groupby("title_key")
-            .agg(
-                hours=("hours", "sum"),
-                n_tickets=("ticket_id", "nunique"),
-                sample_key=("ticket_id", "first"),
-            )
-            .sort_values("hours", ascending=True)
-            .tail(10)
-        )
-
-        labels = []
-        for title_key, row in agg.iterrows():
-            display = str(title_key) if title_key else "(no title)"
-            display = display[:50] + ("…" if len(display) > 50 else "")
-            n = int(row["n_tickets"])
-            display = f"{display}  ({n} tickets)" if n > 1 else f"{row['sample_key']}  ·  {display}"
-            labels.append(display)
-
-        ax2.barh(labels, agg["hours"].to_numpy(), color="#4c78a8", edgecolor="white")
-        for i, v in enumerate(agg["hours"].to_numpy()):
-            ax2.text(v, i, f"  {v:.1f}h", va="center", fontsize=8, color="#333")
-        ax2.set_xlabel("hours")
-        ax2.set_title(
-            f"Top tickets — {window_label}   ·   grouped by title (IPs ignored)",
-            loc="left",
-        )
-        ax2.grid(axis="x", linestyle="-", linewidth=0.5, alpha=0.3)
-        ax2.set_axisbelow(True)
-
-    # --- Panel 3: summary stats --------------------------------------------
-    ax3 = fig.add_subplot(gs[1, 2])
-    ax3.set_axis_off()
-
-    total = float(df["hours"].sum()) if not df.empty else 0.0
-    days_logged = int((pivot.sum(axis=1) > 0).sum()) if not pivot.empty else 0
-    weekdays_in_window = sum(1 for d in all_days if d.weekday() < 5)
-    avg_per_active = active.mean() if len(active) else 0
-    busiest_idx = int(np.argmax(daily_totals)) if daily_totals.any() else None
-    busiest = (
-        f"{all_days[busiest_idx].strftime('%a %-d %b')} ({daily_totals[busiest_idx]:.1f}h)"
-        if busiest_idx is not None and daily_totals[busiest_idx] > 0
-        else "—"
-    )
-
-    lines = [
-        ("Total logged", f"{total:.1f} h"),
-        ("Days logged", f"{days_logged} / {weekdays_in_window} weekdays"),
-        ("Avg active day", f"{avg_per_active:.1f} h"),
-        ("Unique tickets", f"{df['ticket_id'].nunique() if not df.empty else 0}"),
-        ("Busiest day", busiest),
-    ]
-    y = 0.95
-    ax3.text(0.0, y, "Summary", fontsize=12, fontweight="bold", transform=ax3.transAxes)
-    y -= 0.13
-    for label, value in lines:
-        ax3.text(0.0, y, label, fontsize=9, color="#666", transform=ax3.transAxes)
-        ax3.text(1.0, y, value, fontsize=10, fontweight="bold", ha="right", transform=ax3.transAxes)
-        y -= 0.13
-
-    return fig
-
-
-# ---------------------------------------------------------------------------
-# Entry point
-# ---------------------------------------------------------------------------
-
-
-def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    p = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
-    p.add_argument("--user", help="username of another user (default: yourself)")
-    p.add_argument(
+    parser.add_argument(
         "--output",
-        default="jira_worklogs.png",
-        help="output PNG path (default: jira_worklogs.png)",
+        type=Path,
+        metavar="PATH",
+        help=argparse.SUPPRESS,  # legacy spelling of --export, still honoured
     )
-    p.add_argument(
-        "--no-show", action="store_true", help="don't open the interactive matplotlib window"
+    parser.add_argument(
+        "--show",
+        action="store_true",
+        help="open the exported image in a matplotlib window as well",
+    )
+    parser.add_argument(
+        "--no-show",
+        action="store_true",
+        help=argparse.SUPPRESS,  # legacy no-op: nothing opens unless --show
     )
 
-    # Three mutually exclusive ways to specify the time window.
-    win = p.add_mutually_exclusive_group()
+    win = parser.add_argument_group("window").add_mutually_exclusive_group()
     win.add_argument(
         "--ago",
         help=(
@@ -610,88 +181,352 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "interpreted in local time."
         ),
     )
-    return p.parse_args(argv)
 
 
-def resolve_window(args: argparse.Namespace) -> tuple[datetime, datetime, str]:
-    """Turn the parsed CLI flags into (start_dt, end_dt, window_label).
-
-    Exactly one of --ago / --date / --datetime is honoured (argparse enforces
-    mutual exclusion); when none is given, the default --ago window is used.
-    """
-    if args.datetime_range:
-        sn, en = parse_datetime_range(args.datetime_range)
-        start_dt = sn.replace(tzinfo=LOCAL_TZ)
-        end_dt = en.replace(tzinfo=LOCAL_TZ)
-        return start_dt, end_dt, "selected range"
-
-    if args.date_range:
-        sd, ed = parse_date_range(args.date_range)
-        start_dt = datetime.combine(sd, time(0, 0, 0), tzinfo=LOCAL_TZ)
-        end_dt = datetime.combine(ed, time(23, 59, 59), tzinfo=LOCAL_TZ)
-        return start_dt, end_dt, "selected range"
-
-    # Default / explicit --ago path.
-    spec = args.ago or DEFAULT_AGO
-    offset, ago_human = parse_ago(spec)
-    end_dt = datetime.now(LOCAL_TZ)
-    start_dt = end_dt - offset
-    return start_dt, end_dt, f"last {ago_human}"
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    return build_parser().parse_args(argv)
 
 
-def main(argv: list[str] | None = None) -> int:
-    args = parse_args(argv)
+def export_path(args: argparse.Namespace) -> Path | None:
+    """``--export``, or the legacy ``--output`` spelling."""
+    return cast("Path | None", args.export or args.output)
 
-    kb = load_kb()
-    base_url = os.environ.get("JIRA_BASE_URL", kb.base_url)
-    email = os.environ.get("JIRA_EMAIL")
-    # Prefer the project-specific PAT name, but fall back to the generic one.
+
+def window_flags_given(args: argparse.Namespace) -> bool:
+    return bool(args.ago or args.date_range or args.datetime_range)
+
+
+# ---------------------------------------------------------------------------
+# Client
+# ---------------------------------------------------------------------------
+def make_client(kb: KnowledgeBase) -> TrackspaceClient:
     credentials = read_pat(kb=kb)
-    auth_type = os.environ.get("JIRA_AUTH_TYPE", "bearer").lower()
-    api_version = os.environ.get("JIRA_API_VERSION", kb.api_version)
-
     if credentials is None:
-        print("ERROR: TRACKSPACE_PAT environment variable is not set.", file=sys.stderr)
-        return 2
-
-    client = TrackspaceClient(
+        raise ConfigurationError(
+            f"{kb.token_env} environment variable is not set. "
+            f"Export your Trackspace Personal Access Token first "
+            f"(generate one at {kb.pat_profile_url})."
+        )
+    return TrackspaceClient(
         credentials.token,
-        base_url=base_url,
-        api_version=api_version,
+        base_url=os.environ.get("JIRA_BASE_URL", kb.base_url),
+        api_version=os.environ.get("JIRA_API_VERSION", kb.api_version),
         kb=kb,
-        auth_type=auth_type,
-        email=email,
+        auth_type=os.environ.get("JIRA_AUTH_TYPE", "bearer").lower(),
+        email=os.environ.get("JIRA_EMAIL"),
         user_agent=USER_AGENT,
     )
 
-    start_dt, end_dt, window_label = resolve_window(args)
+
+# ---------------------------------------------------------------------------
+# Running one report
+# ---------------------------------------------------------------------------
+def run_report(
+    console: Console,
+    client: TrackspaceClient,
+    report: Report,
+    *,
+    destination: Path | None = None,
+    show: bool = False,
+    summary: chrome.RunSummary | None = None,
+) -> pd.DataFrame:
+    """Fetch, render in the terminal, and export only if asked to."""
+    warnings: list[str] = []
+    with chrome.LiveStatus(console, "Searching issues") as status:
+
+        def on_status(message: str) -> None:
+            status.update(message)
+
+        def on_warning(message: str) -> None:
+            warnings.append(message)
+            status.log("warning", message)
+
+        df, who = fetch_recent_worklogs(
+            client,
+            report.user,
+            report.start,
+            report.end,
+            on_status=on_status,
+            on_warning=on_warning,
+        )
+        status.update(f"Fetched {len(df)} worklogs", worklogs=len(df))
+
+    if summary is not None:
+        summary.replace("worklogs", len(df))
+    terminal.render_report(console, df, report.start, report.end, who, report.label)
+
+    details: list[str] = []
+    if destination is not None:
+        written = export(df, report, destination, who=who, show=show)
+        details.append(f"Written to {written}")
+    if warnings:
+        details.append(f"{len(warnings)} worklogs could not be read and were skipped.")
+
+    total = float(df["hours"].sum()) if not df.empty else 0.0
+    chrome.final(
+        console,
+        "success" if len(df) else "warning",
+        f"{len(df)} worklog entries totalling {total:.1f}h in the {report.label} "
+        f"({report.start.isoformat(timespec='seconds')} → "
+        f"{report.end.isoformat(timespec='seconds')})",
+        details=details,
+    )
+    return df
+
+
+def export(
+    df: pd.DataFrame,
+    report: Report,
+    destination: Path,
+    *,
+    who: str,
+    show: bool = False,
+) -> Path:
+    """Write the report to a file. Images go through matplotlib, rows do not."""
+    suffix = destination.suffix.lower()
+    if suffix not in IMAGE_SUFFIXES | DATA_SUFFIXES:
+        raise ConfigurationError(
+            f"cannot export to {destination.name}: use one of "
+            f"{', '.join(sorted(IMAGE_SUFFIXES | DATA_SUFFIXES))}"
+        )
+    destination.parent.mkdir(parents=True, exist_ok=True)
+
+    if suffix in DATA_SUFFIXES:
+        rows: list[dict[str, Any]] = [
+            {str(column): value for column, value in record.items()}
+            for record in df.to_dict(orient="records")
+        ]
+        for row in rows:
+            if isinstance(row.get("date"), date):
+                row["date"] = row["date"].isoformat()
+        if suffix == ".csv":
+            with destination.open("w", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(handle, fieldnames=list(df.columns))
+                writer.writeheader()
+                writer.writerows(rows)
+        else:
+            destination.write_text(json.dumps(rows, indent=2), encoding="utf-8")
+        return destination
+
+    # Images need matplotlib, so it is imported only on this path — and pinned to
+    # a non-interactive backend unless a window was explicitly asked for.
+    import matplotlib
+
+    if not show:
+        matplotlib.use("Agg")
+    from . import figure
+
+    fig = figure.build_figure(df, report.start, report.end, who, report.label)
+    fig.savefig(destination, dpi=150, bbox_inches="tight", facecolor="white")
+    if show:
+        import matplotlib.pyplot as plt
+
+        plt.show()
+    return destination
+
+
+# ---------------------------------------------------------------------------
+# Interactive session
+# ---------------------------------------------------------------------------
+def interactive(
+    console: Console,
+    client: TrackspaceClient,
+    report: Report,
+    summary: chrome.RunSummary,
+) -> int:
+    prompts.require_tty()
+    run_report(console, client, report, summary=summary)
+
+    while True:
+        choice = prompts.select(
+            "What next?",
+            choices=[
+                Choice("Refresh this report", "refresh"),
+                Choice(f"Time window  ({report.label})", "window"),
+                Choice(f"Whose worklogs  ({report.user or 'me'})", "user"),
+                Choice("Export…", "export"),
+                Choice("Quit", "quit"),
+            ],
+        )
+        if choice == "quit":
+            chrome.final(console, "info", "Session ended")
+            return EXIT_OK
+        try:
+            if choice == "refresh":
+                run_report(console, client, report, summary=summary)
+            elif choice == "window":
+                report = _pick_window(console, report)
+                run_report(console, client, report, summary=summary)
+            elif choice == "user":
+                report = _pick_user(console, client, report)
+                run_report(console, client, report, summary=summary)
+            elif choice == "export":
+                destination = Path(
+                    prompts.text(
+                        "Write to (.png/.pdf/.svg/.json/.csv)",
+                        default="worklogs.png",
+                        validate=_validate_export_path,
+                    ).strip()
+                ).expanduser()
+                run_report(console, client, report, destination=destination, summary=summary)
+        except TrackspaceError as exc:
+            chrome.notice(console, "error", str(exc))
+
+
+def _validate_export_path(value: str) -> bool | str:
+    suffix = Path(value.strip()).suffix.lower()
+    if suffix in IMAGE_SUFFIXES | DATA_SUFFIXES:
+        return True
+    return f"Use one of {', '.join(sorted(IMAGE_SUFFIXES | DATA_SUFFIXES))}"
+
+
+def _pick_window(console: Console, report: Report) -> Report:
+    choice = prompts.select(
+        "Time window",
+        choices=[
+            *[Choice(label, ("ago", spec)) for label, spec in WINDOW_PRESETS],
+            Choice("Custom rolling window (e.g. 6h, 2d, 4M)", ("custom-ago", "")),
+            Choice("Custom date range", ("dates", "")),
+            Choice("Custom datetime range", ("datetimes", "")),
+            Choice("Back", ("back", "")),
+        ],
+    )
+    kind, spec = choice
+    if kind == "back":
+        return report
+
+    if kind == "ago":
+        start, end, label = window_from_ago(spec)
+    elif kind == "custom-ago":
+        value = prompts.text("Window (e.g. 5m, 10h, 2d, 4M, 1Y)", default="30d", validate=_ago_ok)
+        start, end, label = window_from_ago(value.strip())
+    elif kind == "dates":
+        first = prompts.text("From (YYYY-MM-DD)", validate=prompts.validate_date)
+        last = prompts.text("To (YYYY-MM-DD)", validate=prompts.validate_date)
+        start, end, label = window_from_dates(
+            date.fromisoformat(first.strip()), date.fromisoformat(last.strip())
+        )
+    else:
+        value = prompts.text(
+            "Range (YYYY_MM_DD-hh:mm-YYYY_MM_DD-hh:mm)",
+            default="2026_04_01-09:00-2026_04_01-17:30",
+            validate=_datetime_range_ok,
+        )
+        first_dt, last_dt = parse_datetime_range(value.strip())
+        start = first_dt.replace(tzinfo=LOCAL_TZ)
+        end = last_dt.replace(tzinfo=LOCAL_TZ)
+        label = "selected range"
+
+    if end < start:
+        chrome.notice(console, "warning", "The window ends before it starts — nothing will match.")
+    return replace(report, start=start, end=end, label=label)
+
+
+def _ago_ok(value: str) -> bool | str:
+    try:
+        parse_ago(value)
+    except argparse.ArgumentTypeError as exc:
+        return str(exc)
+    return True
+
+
+def _datetime_range_ok(value: str) -> bool | str:
+    try:
+        parse_datetime_range(value)
+    except argparse.ArgumentTypeError as exc:
+        return str(exc)
+    return True
+
+
+def _pick_user(console: Console, client: TrackspaceClient, report: Report) -> Report:
+    choice = prompts.select(
+        "Whose worklogs",
+        choices=[
+            Choice("Mine", "me"),
+            Choice("Someone else…", "other"),
+            Choice("Back", "back"),
+        ],
+    )
+    if choice == "back":
+        return report
+    if choice == "me":
+        return replace(report, user=None)
+
+    query = prompts.text(
+        "Username, email or part of a display name", validate=prompts.validate_nonempty
+    ).strip()
+    found = client.find_user(query)
+    if found is None:
+        chrome.notice(console, "error", f"No user found matching '{query}'.")
+        return report
+    chrome.notice(console, "success", f"Selected {found.get('displayName') or query}")
+    return replace(report, user=query)
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+def main(argv: list[str] | None = None) -> int:
+    chrome.install_sigint_handler()
+    args = parse_args(argv)
+    console = chrome.make_console()
+    summary = chrome.RunSummary()
 
     try:
-        df = fetch_recent_worklogs(client, args.user, start_dt, end_dt)
-        who = args.user or (client.myself().get("displayName") or "me")
-    except AuthError:
-        raise SystemExit("Auth failed (401). Check TRACKSPACE_PAT.") from None
-    except ForbiddenError:
-        raise SystemExit("Forbidden (403). Token lacks permission for this resource.") from None
+        with chrome.cancellable(console, summary):
+            kb = load_kb()
+            start, end, label = resolve_window(args)
+            report = Report(start=start, end=end, label=label, user=args.user)
 
-    print(
-        f"\n→ {len(df)} worklog entries totalling "
-        f"{df['hours'].sum():.1f}h in the {window_label} "
-        f"({start_dt.isoformat(timespec='seconds')} → "
-        f"{end_dt.isoformat(timespec='seconds')})",
-        file=sys.stderr,
-    )
+            present, auth_label = auth_status(kb=kb)
+            chrome.header(
+                console,
+                tool=TOOL_NAME,
+                instance=os.environ.get("JIRA_BASE_URL", kb.base_url),
+                auth_present=present,
+                auth_label=auth_label,
+                rows=[
+                    (
+                        "window",
+                        f"{report.label}  ({start:%-d %b %Y %H:%M} → {end:%-d %b %Y %H:%M})",
+                    ),
+                    ("user", report.user or "me"),
+                ],
+            )
 
-    fig = build_figure(df, start_dt, end_dt, who, window_label)
-    out_path = Path(args.output).expanduser()
-    fig.savefig(out_path, dpi=150, bbox_inches="tight", facecolor="white")
-    print(f"→ saved: {out_path}", file=sys.stderr)
-
-    if not args.no_show:
-        # A headless machine has no window to open; that must not fail the run.
-        with contextlib.suppress(Exception):
-            plt.show()
-    return 0
+            client = make_client(kb)
+            with client:
+                interactive_run = (
+                    args.command is None
+                    and not window_flags_given(args)
+                    and export_path(args) is None
+                    and chrome.is_interactive()
+                )
+                if interactive_run:
+                    return interactive(console, client, report, summary)
+                run_report(
+                    console,
+                    client,
+                    report,
+                    destination=export_path(args),
+                    show=args.show,
+                    summary=summary,
+                )
+                return EXIT_OK
+    except (AuthError, ForbiddenError) as exc:
+        message = (
+            "Auth failed (401). Check TRACKSPACE_PAT."
+            if isinstance(exc, AuthError)
+            else "Forbidden (403). Token lacks permission for this resource."
+        )
+        chrome.final(console, "error", message)
+        return EXIT_CONFIG
+    except (ConfigurationError, UserNotFoundError) as exc:
+        chrome.final(console, "error", str(exc))
+        return EXIT_CONFIG
+    except TrackspaceError as exc:
+        chrome.final(console, "error", f"Trackspace request failed: {exc}", summary=summary)
+        return EXIT_FAILED
 
 
 if __name__ == "__main__":  # pragma: no cover - module entry point

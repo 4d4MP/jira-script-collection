@@ -15,7 +15,7 @@ and fixture-backed tests are the only quality gate.
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
-pytest                                            # 155 tests, no network, no PAT
+pytest                                            # no network, no PAT
 pytest tests/test_client.py::test_myself          # single test
 pytest -k pagination                              # by name
 
@@ -68,7 +68,7 @@ including error, empty and malformed cases. The whole test suite runs off these.
   (questionary via `unsafe_ask()` so Ctrl+C propagates). Build CLIs from these
   rather than hand-rolling, so the two tools cannot drift apart.
 
-### The two tools have different mandates
+### The two tools
 
 `worklog_scheduler/` was rewritten from a Tkinter GUI into an interactive CLI,
 but its **behaviour is frozen**: same schedule expansion, dry-run default, same
@@ -77,14 +77,18 @@ posting semantics, same dashboard figures, same config file at
 config → schedule (expansion + flag-spec parsing) → dashboard (fetch, aggregate,
 render) → entry point.
 
-`worklog_visualizer/` is preserved **functionally as-is** — original flags,
-stderr progress lines, matplotlib figures, PNG-first output. It only adopted the
-shared client and KB constants. It is intentionally the one CLI that does not
-follow the interactive / terminal-chart contract; do not "fix" that.
+`worklog_visualizer/` was rewritten the same way — interactive by default,
+terminal-first rendering — while keeping what it *computes*: window parsing,
+author filtering, the summary figures, and the matplotlib figure itself (now in
+`figure.py`, reached only on image export). Split as window → fetch → terminal /
+figure → entry point. Its one-shot form is `report`, and bare `--ago`/`--date`
+flags still work without the subcommand.
 
-Consequences worth knowing: the two tools have different IP-normalising regexes
-and different malformed-timestamp behaviour, both on purpose (`kb/quirks.md`
-#13, #16).
+Two behaviours changed deliberately in that rewrite and are worth not undoing: a
+file is written only when `--export` (or legacy `--output`) names one, and a
+malformed `started` is skipped with a warning instead of ending the run. The two
+tools still have different IP-normalising regexes on purpose (`kb/quirks.md`
+#13).
 
 ### CLI contract for anything new
 
@@ -102,8 +106,8 @@ problem, `130` cancelled.
 `tests/conftest.py` provides `FakeSession` plus `fixture_router(kb, ...)`, which
 answers requests from `kb/fixtures` and simulates a server capping pages at 2
 rows. Use `make_client(kb, handler)` for client-level tests and
-`patch_client(monkeypatch, kb)` (in `test_scheduler_cli.py`) for end-to-end CLI
-runs. Never add a test that touches the network.
+`patch_client(monkeypatch, kb)` (in `test_scheduler_cli.py` and
+`test_visualizer.py`) for end-to-end CLI runs. Never add a test that touches the network.
 
 Preserved behaviours are pinned by assertions on exact strings (`"HTTP 400"`,
 `"Posted 6/7 worklogs"`, `"2026-04-01T10:00:00.000+0200"`). If one fails, the
