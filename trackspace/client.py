@@ -365,14 +365,37 @@ class TrackspaceClient:
     def issue_transitions(self, issue_key: str) -> list[dict[str, Any]]:
         """Transitions available on this issue from its current status.
 
-        Read-only listing. There is deliberately no execute method here — see
-        ``kb/build-notes.md``: the POST is gated on a probe run recording a
-        real transition graph.
+        The list is a snapshot: it changes as the issue moves, so callers that
+        intend to execute one must fetch it immediately beforehand rather than
+        caching ids (``kb/trackspace.json`` → ``workflow.observed_transitions``).
         """
         data = self.request_json("issue_transitions", path_params={"issue_key": issue_key})
         if isinstance(data, dict) and isinstance(data.get("transitions"), list):
             return cast(list[dict[str, Any]], data["transitions"])
         return []
+
+    def execute_transition(
+        self, issue_key: str, transition_id: str, *, comment: str | None = None
+    ) -> None:
+        """Move an issue through one transition. Never retried.
+
+        Like the worklog POST this is not idempotent, and unlike it a replay is
+        not merely duplicative but wrong: by the time a retry lands the issue is
+        already in the new status, so the same id either fails or — if the
+        workflow loops — moves the issue a second time. A failed call surfaces
+        as an ``ApiError`` and the caller decides.
+
+        The instance answers 204 with no body, so there is nothing to return.
+        """
+        body: dict[str, Any] = {"transition": {"id": str(transition_id)}}
+        if comment:
+            body["update"] = {"comment": [{"add": {"body": comment}}]}
+        self.request_json(
+            "transition_execute",
+            path_params={"issue_key": issue_key},
+            json_body=body,
+            retry=False,
+        )
 
     # ---- comments ------------------------------------------------------------
     def comments(

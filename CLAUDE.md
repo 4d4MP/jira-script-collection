@@ -43,9 +43,15 @@ original scripts) or the string `inferred`. Markdown files in `/kb` are the
 human-readable companion; `kb/quirks.md` explains the load-bearing oddities and
 should be read before changing anything that touches the API.
 
-Things deliberately recorded as *unknown* rather than guessed: custom field ids
-(`fields.custom` is empty because neither original script used one), issue types,
-workflow states, and rate-limit behaviour. Do not invent them.
+A real probe run on 2026-07-28 closed most of what was previously recorded as
+*unknown*: `CLOPSSEC`'s name, the issue types, the status catalogue, the custom
+field ids (988 of them, in `kb/probe-catalogues.json`) and the error body shape,
+each cited to that run. `fields.custom` is still empty **on purpose** — a field
+is copied in with its provenance the first time a tool genuinely needs it,
+rather than hardcoded at a call site. What remains genuinely unknown, and must
+not be invented: **rate-limit behaviour** (the probe's burst step is opt-in and
+has never been run — do not record an absence of rate limiting), other projects'
+issue types and workflows, and the createmeta successor path.
 
 `kb/fixtures/` holds a synthetic but shape-accurate response for every endpoint,
 including error, empty and malformed cases. The whole test suite runs off these.
@@ -111,16 +117,17 @@ subcommand and `--issue X preview` silently loses the issue.
 (GET-only guard, opt-in hard-capped rate-limit burst, findings for human
 fold-in — it never writes the KB). `issue_companion/` is the merged
 transitions/comments/attachments/links/changelog tool; transition *execution*
-is gated until a probe run records a real transition graph. Both follow the
+was gated until a probe run recorded a real transition graph, which the
+2026-07-28 run did — it now exists, never retried, and validated against a
+freshly fetched transition list. Both follow the
 CLI contract below. `trackspace/export.py` defines the shared canonical row
 shape (`trackspace-worklog-rows/1`) both worklog tools emit via
 `--export-canonical`; the historical per-tool export shapes are pinned and
 unchanged. The scheduler's dashboard now paginates worklogs fully (SC-1) — a
 deliberate, documented behaviour change, not a silent bugfix.
-`kb/build-notes.md` carries the per-item build lessons and the honest record
-that the probe's live run has not happened yet (no PAT and no network
-line-of-sight from the build environment), so the KB's unknowns are still
-unknowns.
+`kb/build-notes.md` carries the per-item build lessons and the full record of
+the 2026-07-28 probe run: what closed, what was folded in where, which fixtures
+stopped being placeholders, and what is still open.
 
 ### CLI contract for anything new
 

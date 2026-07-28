@@ -30,16 +30,15 @@ def _pat(monkeypatch: pytest.MonkeyPatch) -> None:
 # ---------------------------------------------------------------------------
 # Step-level: probe.run_probe against the fixture-backed client
 # ---------------------------------------------------------------------------
-def test_fields_step_finds_the_three_custom_fields(
-    kb: KnowledgeBase, client: TrackspaceClient
-) -> None:
+def test_fields_step_finds_the_custom_fields(kb: KnowledgeBase, client: TrackspaceClient) -> None:
     report = probe.run_probe(client, kb, steps=["fields"])
     finding = report.findings[0]
     assert finding.ok is True
     assert finding.endpoint == "field_list"
-    assert finding.evidence["custom_count"] == 3
+    assert finding.evidence["custom_count"] == 2
     ids = {f["id"] for f in finding.evidence["custom_fields"]}
-    assert ids == {"customfield_10001", "customfield_10002", "customfield_10003"}
+    # Real ids from the 2026-07-28 probe run; the fixture no longer invents any.
+    assert ids == {"customfield_21500", "customfield_18303"}
     for entry in finding.evidence["custom_fields"]:
         assert "name" in entry
         assert "clauseNames" in entry
@@ -50,8 +49,8 @@ def test_project_step_reports_the_real_name(kb: KnowledgeBase, client: Trackspac
     finding = report.findings[0]
     assert finding.ok is True
     assert finding.evidence["key"] == "CLOPSSEC"
-    assert finding.evidence["name"] == "Cloud Ops Security"
-    assert len(finding.evidence["issue_types"]) == 3
+    assert finding.evidence["name"] == "CloudOps Security"
+    assert len(finding.evidence["issue_types"]) == 7
 
 
 def test_createmeta_step_scopes_to_the_project(kb: KnowledgeBase, client: TrackspaceClient) -> None:
@@ -68,7 +67,7 @@ def test_statuses_step_lists_the_global_catalogue(
     finding = report.findings[0]
     assert finding.ok is True
     names = {status["name"] for status in finding.evidence["statuses"]}
-    assert names == {"To Do", "In Progress", "Done"}
+    assert names == {"Open", "Reopened", "In Progress", "Analysis", "Resolved", "Closed"}
 
 
 def test_transitions_step_lists_transition_ids(kb: KnowledgeBase, client: TrackspaceClient) -> None:
@@ -76,7 +75,7 @@ def test_transitions_step_lists_transition_ids(kb: KnowledgeBase, client: Tracks
     finding = report.findings[0]
     assert finding.ok is True
     ids = {t["id"] for t in finding.evidence["transitions"]}
-    assert ids == {"11", "21"}
+    assert ids == {"831"}
 
 
 def test_permissions_step_includes_the_denied_administer(

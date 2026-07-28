@@ -374,7 +374,7 @@ def test_issue_get_bare_and_with_changelog(kb: KnowledgeBase) -> None:
 def test_issue_transitions_lists_the_fixture_transitions(kb: KnowledgeBase) -> None:
     client, _ = make_client(kb, fixture_router(kb))
     transitions = client.issue_transitions("CLOPSSEC-41456")
-    assert [t["name"] for t in transitions] == ["Start Progress", "Done"]
+    assert [t["name"] for t in transitions] == ["Reopen"]
 
 
 def test_comment_pagination_advances_by_returned_count(kb: KnowledgeBase) -> None:
@@ -519,3 +519,37 @@ def test_delete_remote_link_hits_delete_on_the_remote_link_url(kb: KnowledgeBase
     assert client.delete_remote_link("CLOPSSEC-41456", "20001") is None
     assert session.calls[0].method == "DELETE"
     assert session.calls[0].url.endswith("/issue/CLOPSSEC-41456/remotelink/20001")
+
+
+# ---------------------------------------------------------------------------
+# Transition execution (ungated by the 2026-07-28 probe run)
+# ---------------------------------------------------------------------------
+def test_execute_transition_posts_the_transition_id(kb: KnowledgeBase) -> None:
+    client, session = make_client(kb, fixture_router(kb))
+    assert client.execute_transition("CLOPSSEC-41456", "831") is None
+    assert session.calls[0].method == "POST"
+    assert session.calls[0].url.endswith("/issue/CLOPSSEC-41456/transitions")
+    assert session.calls[0].json_body == {"transition": {"id": "831"}}
+
+
+def test_execute_transition_carries_an_optional_comment(kb: KnowledgeBase) -> None:
+    client, session = make_client(kb, fixture_router(kb))
+    client.execute_transition("CLOPSSEC-41456", "831", comment="reopening for follow-up")
+    assert session.calls[0].json_body == {
+        "transition": {"id": "831"},
+        "update": {"comment": [{"add": {"body": "reopening for follow-up"}}]},
+    }
+
+
+def test_transition_post_is_never_retried(kb: KnowledgeBase) -> None:
+    """A replayed transition moves the issue twice through a looping workflow."""
+    attempts = {"n": 0}
+
+    def handler(method: str, url: str, params: Any, body: Any) -> FakeResponse:
+        attempts["n"] += 1
+        return FakeResponse(500, {"errorMessages": ["down"]}, url=url, method=method)
+
+    client, _ = make_client(kb, handler, max_retries=5)
+    with pytest.raises(ServerError):
+        client.execute_transition("CLOPSSEC-41456", "831")
+    assert attempts["n"] == 1

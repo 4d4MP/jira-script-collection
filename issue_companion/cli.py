@@ -2,7 +2,7 @@
 """Trackspace issue companion.
 
 Companion actions on one Trackspace issue: show its summary/status/changelog,
-list (never execute) its transitions, and read/write comments, attachments,
+list and execute its transitions, and read/write comments, attachments,
 issue links and remote links.
 
 Interactive by default::
@@ -13,15 +13,17 @@ Every interactive choice also has a flag, so the same tool runs unattended::
 
     python -m issue_companion show CLOPSSEC-41456 --changelog --attachments --links
     python -m issue_companion transitions CLOPSSEC-41456
+    python -m issue_companion transitions CLOPSSEC-41456 --to Reopen --yes
     python -m issue_companion comment CLOPSSEC-41456 list
     python -m issue_companion comment CLOPSSEC-41456 add --body "Logged via script"
     python -m issue_companion attach CLOPSSEC-41456 upload report.png --yes
     python -m issue_companion link CLOPSSEC-41456 add --type Blocks --to CLOPSSEC-41501
 
-Transition *execution* is deliberately not built here — see
-``kb/build-notes.md``: the POST is gated on a probe run that records a real
-transition graph for this instance. ``transitions`` only lists what is
-available.
+Transition *execution* was gated on a probe run recording a real transition
+graph; the 2026-07-28 run did (``kb/trackspace.json`` →
+``workflow.observed_transitions``), so ``transitions --to`` now exists. It
+re-fetches the live transition list first and refuses anything not currently
+available, because the graph depends on the issue's current status.
 
 Binary attachment download is out of scope too (``request_json`` is JSON-only;
 see ``kb/build-notes.md``'s design decisions) — ``attach`` can list, upload and
@@ -52,12 +54,9 @@ EXIT_OK = 0
 EXIT_FAILURES = 1
 EXIT_CONFIG = 2
 
-#: NT-2: read-only listing only. No execute path exists until a probe run
-#: records a real transition graph for this instance (kb/build-notes.md).
-GATED_TRANSITION_NOTE = (
-    "Executing a transition is not supported yet — gated on a probe run that "
-    "records a real transition graph for this instance (see kb/build-notes.md)."
-)
+#: NT-2: shown under a bare `transitions` listing, so the read-only path still
+#: says how to act on what it just printed.
+TRANSITION_HINT = "Run again with --to <id or name> to execute one of these."
 
 
 # ---------------------------------------------------------------------------
@@ -79,9 +78,20 @@ def build_parser() -> argparse.ArgumentParser:
     show.add_argument("--links", action="store_true", help="also show issue and remote links")
 
     transitions = subparsers.add_parser(
-        "transitions", help="list the transitions available on an issue (read-only)"
+        "transitions", help="list the transitions available on an issue, or execute one"
     )
     transitions.add_argument("issue", metavar="ISSUE")
+    transitions.add_argument(
+        "--to",
+        dest="transition",
+        metavar="ID_OR_NAME",
+        default=None,
+        help="execute this transition (id or exact name, case-insensitive)",
+    )
+    transitions.add_argument(
+        "--comment", metavar="TEXT", default=None, help="comment to add with the transition"
+    )
+    transitions.add_argument("--yes", action="store_true", help="skip the confirmation prompt")
 
     comment = subparsers.add_parser("comment", help="list, add, update or delete comments")
     comment.add_argument("issue", metavar="ISSUE")
@@ -378,13 +388,62 @@ def do_show(
     return EXIT_OK
 
 
-def do_transitions(console: Console, client: TrackspaceClient, issue_key: str) -> int:
+def _match_transition(transitions: list[dict[str, Any]], wanted: str) -> dict[str, Any] | None:
+    """The transition whose id or name matches ``wanted``, or ``None``.
+
+    Ids win over names: an id is unambiguous, a name need not be.
+    """
+    target = wanted.strip().casefold()
+    for transition in transitions:
+        if str(transition.get("id", "")).casefold() == target:
+            return transition
+    for transition in transitions:
+        if str(transition.get("name", "")).casefold() == target:
+            return transition
+    return None
+
+
+def do_transitions(
+    console: Console,
+    client: TrackspaceClient,
+    issue_key: str,
+    *,
+    wanted: str | None = None,
+    comment: str | None = None,
+    assume_yes: bool = False,
+) -> int:
     with chrome.LiveStatus(console, f"Fetching transitions for {issue_key}") as status:
         transitions = client.issue_transitions(issue_key)
         status.update(f"Fetched {len(transitions)} transitions")
     _print_transitions(console, transitions)
-    chrome.notice(console, "info", GATED_TRANSITION_NOTE)
-    chrome.final(console, "success", f"{len(transitions)} transitions listed for {issue_key}")
+
+    if wanted is None:
+        chrome.notice(console, "info", TRANSITION_HINT)
+        chrome.final(console, "success", f"{len(transitions)} transitions listed for {issue_key}")
+        return EXIT_OK
+
+    # The list above IS the validation set: it was fetched moments ago from the
+    # issue's current status, and that is the only thing the POST will accept.
+    chosen = _match_transition(transitions, wanted)
+    if chosen is None:
+        available = ", ".join(f"{t.get('id')}={t.get('name')}" for t in transitions) or "none"
+        chrome.final(
+            console,
+            "error",
+            f"No transition {wanted!r} available on {issue_key} right now (available: {available})",
+        )
+        return EXIT_FAILURES
+
+    destination = (chosen.get("to") or {}).get("name", "?")
+    if not _confirm(
+        f"Transition {issue_key} via {chosen.get('name')} → {destination}?", assume_yes=assume_yes
+    ):
+        chrome.final(console, "warning", "Cancelled — the issue was not moved.")
+        return EXIT_OK
+
+    with chrome.LiveStatus(console, f"Transitioning {issue_key} → {destination}"):
+        client.execute_transition(issue_key, str(chosen.get("id")), comment=comment)
+    chrome.final(console, "success", f"{issue_key} moved to {destination}")
     return EXIT_OK
 
 
@@ -625,7 +684,14 @@ def _dispatch(
             summary=summary,
         )
     if command == "transitions":
-        return do_transitions(console, client, args.issue)
+        return do_transitions(
+            console,
+            client,
+            args.issue,
+            wanted=args.transition,
+            comment=args.comment,
+            assume_yes=args.yes,
+        )
     if command == "comment":
         if args.comment_action == "list":
             return do_comment_list(console, client, args.issue)
@@ -697,7 +763,7 @@ def interactive(console: Console, base_url: str, *, summary: chrome.RunSummary) 
                     Choice("Attachments", "attach"),
                     Choice("Comments", "comment"),
                     Choice("Links", "link"),
-                    Choice("Transitions (read-only)", "transitions"),
+                    Choice("Transitions", "transitions"),
                     Choice(f"Change issue key  ({issue_key})", "change-issue"),
                     Choice("Quit", "quit"),
                 ],
@@ -735,7 +801,7 @@ def interactive(console: Console, base_url: str, *, summary: chrome.RunSummary) 
                 elif choice == "link":
                     _interactive_link(console, client, issue_key)
                 elif choice == "transitions":
-                    do_transitions(console, client, issue_key)
+                    _interactive_transitions(console, client, issue_key)
                 elif choice == "change-issue":
                     issue_key = prompts.text(
                         "Issue key", default=issue_key, validate=prompts.validate_issue_key
@@ -800,6 +866,39 @@ def _interactive_comment(console: Console, client: TrackspaceClient, issue_key: 
     elif action == "delete":
         comment_id = prompts.text("Comment id", validate=prompts.validate_nonempty)
         do_comment_delete(console, client, issue_key, comment_id.strip(), assume_yes=False)
+
+
+def _interactive_transitions(console: Console, client: TrackspaceClient, issue_key: str) -> None:
+    """List the transitions, then offer to execute one of the listed ids."""
+    do_transitions(console, client, issue_key)
+    transitions = client.issue_transitions(issue_key)
+    if not transitions:
+        return
+    choice = prompts.select(
+        "Execute a transition?",
+        choices=[
+            *(
+                Choice(
+                    f"{t.get('name')} → {(t.get('to') or {}).get('name', '?')}",
+                    str(t.get("id")),
+                )
+                for t in transitions
+            ),
+            Choice("Back", "back"),
+        ],
+        allow_back=True,
+    )
+    if prompts.is_back(choice) or choice == "back":
+        return
+    comment = prompts.text("Comment (optional)", default="").strip()
+    do_transitions(
+        console,
+        client,
+        issue_key,
+        wanted=choice,
+        comment=comment or None,
+        assume_yes=False,
+    )
 
 
 def _interactive_link(console: Console, client: TrackspaceClient, issue_key: str) -> None:

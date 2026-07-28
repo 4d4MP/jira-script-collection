@@ -18,8 +18,8 @@ LIB-10, HYG-1..5. One lesson per item as it lands. Specs live in
   - [x] NT-1: `instance_probe/` package + `tests/test_probe.py`
   - [x] NT-2..6: `issue_companion/` package + `tests/test_issue_companion.py`
     (+ multipart/headers support in `trackspace/client.py` — that agent owns
-    client.py). Transition *execute* path NOT built (gated on a real probe
-    run returning a transition graph).
+    client.py). Transition *execute* path built later, once the 2026-07-28
+    probe run satisfied its gate.
   - [x] SCHED: SC-1, SC-7, SC-8, SC-9, SC-10, SC-17, SC-18, SC-19 in
     `worklog_scheduler/` + appends to tests/test_schedule.py +
     tests/test_scheduler_cli.py
@@ -30,10 +30,11 @@ LIB-10, HYG-1..5. One lesson per item as it lands. Specs live in
 - [x] **Phase 2 — integration (me, after Phase 1 merges)**: LIB-2 (wire
   on_progress in both tools), LIB-10 (third canonical export shape, opt-in in
   both tools), console-script entries in pyproject.toml for new packages.
-- [~] **Phase 3 (tool built; live run NOT possible from this environment — see NT-1 findings below) — probe live run**: attempt NT-1 against production with
-  TRACKSPACE_PAT (network may be blocked by the sandbox proxy — report
-  honestly either way). Fold findings into kb/trackspace.json as ONE deliberate
-  cited edit (probe never writes its own KB entries). KBW-1..6.
+- [x] **Phase 3 — probe live run**: run executed outside this environment on
+  2026-07-28 (the sandbox has neither the PAT nor egress to the host) and its
+  `findings.json` handed back. Folded into kb/trackspace.json as ONE cited edit
+  (the probe never writes its own KB entries). KBW-1..5 closed; **KBW-6
+  (rate limiting) deliberately still open** — see NT-1 findings below.
 - [x] **Phase 4 — gate + docs + ship**: full pytest/ruff/mypy/bandit, README +
   CLAUDE.md updates, conventional commits, push to main.
 - [x] HYG-5: report-only, findings recorded below. No git history action.
@@ -55,9 +56,11 @@ LIB-10, HYG-1..5. One lesson per item as it lands. Specs live in
   NOT built — `request_json` is JSON-only and a binary path is new client
   surface beyond the audit entries' scope. Named in the final report as
   adjacent work, per the scope fence.
-- **Transition execute (POST .../transitions)**: KB entry added (safe static
-  surface) but no tool code and no tests for the execute half until a probe
-  run returns a real transition graph — per the sequencing constraint.
+- **Transition execute (POST .../transitions)**: KB entry added up front (safe
+  static surface) with no tool code until the gate opened. The 2026-07-28 probe
+  run returned a real transition graph, so the execute path was then built —
+  never retried, validated against a freshly fetched list, confirmed unless
+  `--yes`. See the NT-1 findings section.
 - **ICS (SC-9 export / SC-10 import)**: minimal hand-rolled VEVENT
   writer/parser on stdlib, no new dependency. Only DTSTART/DTEND/SUMMARY are
   honoured; good enough for calendar-import seeds, documented in help text.
@@ -136,27 +139,92 @@ From the audit's hygiene pass (full grep + `git log --all -S` pickaxe):
   (`git filter-repo`-class), since they are load-bearing in nearly every
   commit. **No action taken; that decision belongs to the repo owner.**
 
-## NT-1 findings — live run NOT possible from this environment (2026-07-27)
+## NT-1 findings — the live run happened (2026-07-28)
 
-Attempted after the tool was built and its offline tests passed:
+The 2026-07-27 attempt from the build sandbox failed twice over: `TRACKSPACE_PAT`
+was not set, and independently `curl https://trackspace.lhsystems.com/...` was
+refused by the egress proxy (`CONNECT tunnel failed, response 403`) — no request
+ever reached Trackspace. The run was then executed **outside** this environment
+and its `--export findings.json` handed back for fold-in.
 
-- `TRACKSPACE_PAT` is **not set** in this session's environment (contrary to
-  the task brief's expectation). The probe refused with the standard
-  ConfigurationError, exactly as designed.
-- Independently of auth, the instance is **unreachable from this sandbox**:
-  `curl https://trackspace.lhsystems.com/rest/api/2/serverInfo` fails with
-  `CONNECT tunnel failed, response 403` from the egress proxy. No request
-  reached Trackspace.
+Six of seven default steps succeeded; the seventh is a finding in its own right.
 
-Consequences, stated per the sequencing rules:
-- **KBW-1..6 remain open.** kb/trackspace.json's unknowns (custom field ids,
-  issue types, workflow states, CLOPSSEC's real name, error body shape,
-  rate-limit behaviour) are left exactly as they were — no fold-in happened,
-  because there are no findings to fold in. The seven probe fixtures remain
-  synthetic placeholders, flagged as such in kb/fixtures/README.md.
-- **The transition-execute path stays unbuilt** (its gate — a real probed
-  transition graph — was never satisfied).
-- To close this out: run `trackspace-probe --export findings.json` from a
-  machine with the PAT and network line-of-sight to the instance, then fold
-  the findings into kb/trackspace.json as one cited edit ("probe run <date>,
-  see <report path>") — the probe deliberately never writes the KB itself.
+| Step | Result |
+| --- | --- |
+| fields | 1030 fields — 42 system, 988 custom |
+| project | `CLOPSSEC` = **CloudOps Security**, 7 issue types |
+| createmeta | **failed** — 404 `Issue Does Not Exist` (quirk #18) |
+| statuses | 183 global statuses across all three categories |
+| transitions | 1 available from CLOPSSEC-41456: `831` Reopen → Open |
+| permissions | 69 granted / 18 denied; `TRANSITION_ISSUES` granted, `ADMINISTER` denied |
+| error-shape | 404 body witnessed; bogus and malformed keys are indistinguishable |
+
+The opt-in `rate-limit` burst was **not** run, so KBW-6 stays open — see below.
+
+### What was folded in, and where
+
+One cited edit to `kb/trackspace.json`, citing
+`probe run 2026-07-28 (instance_probe/trackspace-probe --export; catalogues in
+kb/probe-catalogues.json)` on every fact:
+
+- **KBW-1 custom field ids** — closed. `fields.custom` deliberately stays empty
+  (no tool consumes one yet); `fields.custom_catalogue` records the count and
+  points at the catalogue. Copy a field in *with its provenance* the first time
+  a tool needs it, rather than hardcoding an id at the call site.
+- **KBW-2 issue types** — closed. All 7 `CLOPSSEC` types inline in
+  `fields.issue_types`. Other projects were not probed and stay unknown.
+- **KBW-3 workflow states** — closed. New top-level `workflow` key: status count
+  + catalogue pointer, the observed transition sample, and the permission
+  summary. The note is explicit that a status catalogue is not a workflow graph.
+- **KBW-4 CLOPSSEC's real name** — closed. `CloudOps Security` (my placeholder
+  guessed "Cloud Ops Security" — one space wrong, which is exactly why guesses
+  do not belong in the KB).
+- **KBW-5 error body shape** — closed and upgraded from `inferred` to
+  **witnessed**, with the verbatim 404 body and the indistinguishability finding
+  (quirk #19).
+- **KBW-6 rate limiting** — **still open, deliberately.** The burst step is
+  opt-in and was not run, so nothing has ever observed a 429 from this instance.
+  The KB now says so in as many words, including "Do not record an absence of
+  rate limiting — nothing has tested for it." A test pins that sentence.
+
+The bulky catalogues (988 custom fields, 183 statuses, 87 permissions) live in
+`kb/probe-catalogues.json` so `trackspace.json` stays readable; the raw
+`findings.json` was not committed verbatim.
+
+### Fixtures: placeholders replaced by witnessed shapes
+
+`field_list`, `project_CLOPSSEC`, `status_list`, `issue_transitions_*`,
+`mypermissions_*` and `errors.json`'s 404 now carry real data. Six test
+assertions moved with them (project name, issue-type count, status names,
+transition ids, custom field ids) — those pinned *fixture contents*, not tool
+behaviour, so updating them is the correct response. My three invented custom
+fields (`customfield_10001/2/3` "Team"/"Story Points"/"Severity") were deleted
+rather than kept alongside the real ones.
+
+`issue_createmeta_CLOPSSEC.json` is kept but reclassified: it is the success
+shape of an endpoint this instance does not serve, retained only so the probe's
+parsing stays covered.
+
+### Transition execute — gate satisfied, path built
+
+The sequencing rule was "no execute path until a probe run records a real
+transition graph". It did, so `execute_transition` now exists on the client and
+`issue_companion transitions --to <id|name>` drives it. Three properties worth
+keeping:
+
+- **Never retried.** Unlike the worklog POST, whose replay double-books, a
+  replayed transition either fails (the id is invalid from the new status) or
+  moves the issue twice through a looping workflow. Same rule, different reason.
+- **The live list is the validation set.** The command re-fetches transitions
+  and refuses anything absent from that fresh set, because the available set is
+  a snapshot of the current status (quirk #20). Ids are matched before names.
+- **Confirmed unless `--yes`**, like every other mutation in that tool.
+
+### What is still open after this run
+
+- **KBW-6 / rate limiting** — needs `trackspace-probe --only rate-limit
+  --rate-limit-burst N` from a machine with network line-of-sight. Report it as
+  "0/N 429s at burst=N on <date>", never as "no rate limit".
+- **The createmeta successor path** — `/issue/createmeta/{projectIdOrKey}/issuetypes`
+  is unprobed. Adding it means a KB entry, a fixture and a probe step.
+- **Other projects' issue types and workflows** — only `CLOPSSEC` was probed.

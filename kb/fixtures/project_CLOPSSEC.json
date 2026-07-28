@@ -2,7 +2,7 @@
   "self": "https://trackspace.lhsystems.com/rest/api/2/project/10200",
   "id": "10200",
   "key": "CLOPSSEC",
-  "name": "Cloud Ops Security",
+  "name": "CloudOps Security",
   "lead": {
     "self": "https://trackspace.lhsystems.com/rest/api/2/user?username=adam.papp",
     "key": "JIRAUSER10042",
@@ -12,22 +12,64 @@
   },
   "issueTypes": [
     {
-      "id": "3",
-      "name": "Task",
-      "subtask": false,
-      "description": "A task that needs to be done - placeholder until probed"
-    },
-    {
-      "id": "10400",
+      "self": "https://trackspace.lhsystems.com/rest/api/2/issuetype/10",
+      "id": "10",
+      "description": "An incident which impairs or prevents the functions of the product.",
+      "iconUrl": "https://trackspace.lhsystems.com/secure/viewavatar?size=xsmall&avatarId=37133&avatarType=issuetype",
       "name": "Incident",
       "subtask": false,
-      "description": "An operational security incident - placeholder until probed"
+      "avatarId": 37133
     },
     {
+      "self": "https://trackspace.lhsystems.com/rest/api/2/issuetype/11",
+      "id": "11",
+      "description": "A problem is the unknown underlying cause of one or more incidents.",
+      "iconUrl": "https://trackspace.lhsystems.com/secure/viewavatar?size=xsmall&avatarId=21777&avatarType=issuetype",
+      "name": "Problem",
+      "subtask": false,
+      "avatarId": 21777
+    },
+    {
+      "self": "https://trackspace.lhsystems.com/rest/api/2/issuetype/3",
+      "id": "3",
+      "description": "A simple task or activity that needs to be tracked",
+      "iconUrl": "https://trackspace.lhsystems.com/secure/viewavatar?size=xsmall&avatarId=21788&avatarType=issuetype",
+      "name": "Task",
+      "subtask": false,
+      "avatarId": 21788
+    },
+    {
+      "self": "https://trackspace.lhsystems.com/rest/api/2/issuetype/5",
       "id": "5",
+      "description": "The sub-task of the issue",
+      "iconUrl": "https://trackspace.lhsystems.com/secure/viewavatar?size=xsmall&avatarId=21786&avatarType=issuetype",
       "name": "Sub-task",
       "subtask": true,
-      "description": "The sub-task of an issue - placeholder until probed"
+      "avatarId": 21786
+    },
+    {
+      "self": "https://trackspace.lhsystems.com/rest/api/2/issuetype/28",
+      "id": "28",
+      "description": "A risk issue",
+      "iconUrl": "https://trackspace.lhsystems.com/images/icons/issue_risk.png",
+      "name": "Risk",
+      "subtask": false
+    },
+    {
+      "self": "https://trackspace.lhsystems.com/rest/api/2/issuetype/53",
+      "id": "53",
+      "description": "",
+      "iconUrl": "https://trackspace.lhsystems.com/images/icons/issue_risk.png",
+      "name": "Security measure",
+      "subtask": false
+    },
+    {
+      "self": "https://trackspace.lhsystems.com/rest/api/2/issuetype/89",
+      "id": "89",
+      "description": "",
+      "iconUrl": "https://trackspace.lhsystems.com/images/icons/issue_risk.png",
+      "name": "Threat- and Vulnerability analysis",
+      "subtask": false
     }
   ]
 }

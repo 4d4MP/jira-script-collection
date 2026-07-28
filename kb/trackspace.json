@@ -23,7 +23,9 @@
     "header_name": "Authorization",
     "header_value_template": "Bearer {token}",
     "token_env": "TRACKSPACE_PAT",
-    "token_env_fallbacks": ["JIRA_API_TOKEN"],
+    "token_env_fallbacks": [
+      "JIRA_API_TOKEN"
+    ],
     "request_headers": {
       "Accept": "application/json",
       "Content-Type": "application/json"
@@ -31,7 +33,9 @@
     "alternate_scheme": {
       "name": "basic",
       "enabled_by": "JIRA_AUTH_TYPE=basic",
-      "requires_env": ["JIRA_EMAIL"],
+      "requires_env": [
+        "JIRA_EMAIL"
+      ],
       "note": "Present in work.py but never exercised against this instance; Data Center PATs are used as Bearer tokens."
     },
     "source": {
@@ -96,7 +100,10 @@
         "started": "string, format %Y-%m-%dT%H:%M:%S.000%z (offset without colon)",
         "comment": "plain string - v2 wire format, not Atlassian Document Format"
       },
-      "success_status": [200, 201],
+      "success_status": [
+        200,
+        201
+      ],
       "returns": "The created worklog object; only `id` is consumed.",
       "timeout_s": 30,
       "idempotent": false,
@@ -143,7 +150,8 @@
       "returns": "{projects: [{key, issuetypes: [{id, name, fields: {...}}]}]} - the subset of issue types/fields the token owner can actually create.",
       "timeout_s": 30,
       "fixture": "issue_createmeta_CLOPSSEC.json",
-      "source": "capability-audit NT-1 (public Jira DC REST v2 surface; path/method are static knowledge, response shape unverified until probed)"
+      "source": "capability-audit NT-1 (public Jira DC REST v2 surface; path/method are static knowledge, response shape unverified until probed); availability from probe run 2026-07-28 (instance_probe/trackspace-probe --export; catalogues in kb/probe-catalogues.json)",
+      "availability": "ABSENT ON THIS INSTANCE. Probed 2026-07-28: GET /rest/api/2/issue/createmeta answers 404 {\"errorMessages\":[\"Issue Does Not Exist\"],\"errors\":{}} - i.e. 'createmeta' is being parsed as an issue key by /issue/{key}, which is what happens when the aggregated createmeta resource is not served. Jira DC 9+ replaced it with /issue/createmeta/{projectIdOrKey}/issuetypes[/{issueTypeId}]; that successor path is NOT verified here - the probe never called it. Do not rely on this entry until it is re-probed."
     },
     "status_list": {
       "method": "GET",
@@ -172,13 +180,15 @@
         "transition": "{\"id\": \"<transition id from issue_transitions>\"}",
         "update": "optional {\"comment\": [...]} block"
       },
-      "success_status": [204],
+      "success_status": [
+        204
+      ],
       "returns": "No content on success.",
       "timeout_s": 30,
       "idempotent": false,
       "fixture": "no_content.json",
-      "note": "execute path gated: no tool code until a probe run records a real transition graph (capability-audit sequencing)",
-      "source": "capability-audit NT-2 (public Jira DC REST v2 surface; path/method are static knowledge, response shape unverified until probed)"
+      "note": "Execute path is live as of the 2026-07-28 probe run, which recorded a real transition graph (see workflow.observed_transitions). Not idempotent and never retried: a replay either fails (the id is no longer valid from the new status) or, in a looping workflow, moves the issue a second time. Callers must re-fetch issue_transitions immediately before posting - the available set depends on the issue's current status.",
+      "source": "capability-audit NT-2 (public Jira DC REST v2 surface; path/method are static knowledge, response shape unverified until probed); ungated by probe run 2026-07-28"
     },
     "issue_get": {
       "method": "GET",
@@ -219,7 +229,9 @@
       "body": {
         "body": "plain string - v2 wire format, not Atlassian Document Format, matching the existing worklog-comment convention"
       },
-      "success_status": [201],
+      "success_status": [
+        201
+      ],
       "returns": "The created comment object.",
       "timeout_s": 30,
       "idempotent": false,
@@ -232,7 +244,9 @@
       "body": {
         "body": "plain string replacing the comment body"
       },
-      "success_status": [200],
+      "success_status": [
+        200
+      ],
       "returns": "The updated comment object.",
       "timeout_s": 30,
       "idempotent": true,
@@ -243,7 +257,9 @@
       "method": "DELETE",
       "path": "/rest/api/2/issue/{issue_key}/comment/{comment_id}",
       "params": {},
-      "success_status": [204],
+      "success_status": [
+        204
+      ],
       "returns": "No content on success.",
       "timeout_s": 30,
       "idempotent": true,
@@ -259,7 +275,9 @@
       "headers": {
         "X-Atlassian-Token": "no-check"
       },
-      "success_status": [200],
+      "success_status": [
+        200
+      ],
       "returns": "JSON array containing the created attachment object.",
       "timeout_s": 30,
       "idempotent": false,
@@ -279,7 +297,9 @@
       "method": "DELETE",
       "path": "/rest/api/2/attachment/{attachment_id}",
       "params": {},
-      "success_status": [204],
+      "success_status": [
+        204
+      ],
       "returns": "No content on success.",
       "timeout_s": 30,
       "idempotent": true,
@@ -303,7 +323,9 @@
         "inwardIssue": "{\"key\": \"...\"}",
         "outwardIssue": "{\"key\": \"...\"}"
       },
-      "success_status": [201],
+      "success_status": [
+        201
+      ],
       "returns": "No content on success.",
       "timeout_s": 30,
       "idempotent": false,
@@ -323,7 +345,9 @@
       "method": "DELETE",
       "path": "/rest/api/2/issueLink/{link_id}",
       "params": {},
-      "success_status": [204],
+      "success_status": [
+        204
+      ],
       "returns": "No content on success.",
       "timeout_s": 30,
       "idempotent": true,
@@ -356,7 +380,9 @@
         "application": "optional {name, type}",
         "object": "{url, title, icon}"
       },
-      "success_status": [201],
+      "success_status": [
+        201
+      ],
       "returns": "{id, self}",
       "timeout_s": 30,
       "idempotent": false,
@@ -368,7 +394,9 @@
       "method": "DELETE",
       "path": "/rest/api/2/issue/{issue_key}/remotelink/{link_id}",
       "params": {},
-      "success_status": [204],
+      "success_status": [
+        204
+      ],
       "returns": "No content on success.",
       "timeout_s": 30,
       "idempotent": true,
@@ -440,30 +468,86 @@
       }
     },
     "custom": {},
-    "custom_fields_note": "No customfield_* id appears anywhere in either script. This instance's custom field ids are therefore UNKNOWN, not empty - the two scripts simply never touch one. Do not invent ids; add them here with provenance the first time a tool genuinely needs one.",
-    "issue_types_note": "UNKNOWN. Neither script reads, filters on, or sets an issue type.",
-    "workflow_states_note": "UNKNOWN. Neither script reads a status or performs a transition."
+    "custom_fields_note": "PROBED. This instance exposes 1030 fields (42 system, 988 custom). The full custom catalogue (id, name, clauseNames) lives in kb/probe-catalogues.json#custom_fields. `custom` above stays empty on purpose: no tool consumes a custom field yet. When one genuinely needs a field, copy it in here with its provenance rather than hardcoding the id at the call site.",
+    "issue_types_note": "PROBED for CLOPSSEC. The 7 types below are what this project offers; other projects on the instance may differ and were not probed. No tool reads, filters on, or sets an issue type today.",
+    "workflow_states_note": "PROBED. 183 global statuses exist instance-wide; the full list (id, name, statusCategory) is in kb/probe-catalogues.json#statuses. See the top-level `workflow` key for the transition evidence.",
+    "custom_catalogue": {
+      "count": 988,
+      "file": "kb/probe-catalogues.json",
+      "pointer": "custom_fields",
+      "record_shape": "id, name, clauseNames[]",
+      "source": "probe run 2026-07-28 (instance_probe/trackspace-probe --export; catalogues in kb/probe-catalogues.json)"
+    },
+    "issue_types": {
+      "project": "CLOPSSEC",
+      "types": [
+        {
+          "id": "10",
+          "name": "Incident",
+          "subtask": false
+        },
+        {
+          "id": "11",
+          "name": "Problem",
+          "subtask": false
+        },
+        {
+          "id": "3",
+          "name": "Task",
+          "subtask": false
+        },
+        {
+          "id": "5",
+          "name": "Sub-task",
+          "subtask": true
+        },
+        {
+          "id": "28",
+          "name": "Risk",
+          "subtask": false
+        },
+        {
+          "id": "53",
+          "name": "Security measure",
+          "subtask": false
+        },
+        {
+          "id": "89",
+          "name": "Threat- and Vulnerability analysis",
+          "subtask": false
+        }
+      ],
+      "source": "probe run 2026-07-28 (instance_probe/trackspace-probe --export; catalogues in kb/probe-catalogues.json)"
+    }
   },
   "projects": {
     "CLOPSSEC": {
       "key": "CLOPSSEC",
       "known_issue": "CLOPSSEC-41456",
       "role": "Default issue the scheduler books recurring meeting time against.",
-      "name": "UNKNOWN - the project's human-readable name never appears in either script.",
-      "source": "work_log.py:126 (AppConfig.issue_key default)"
+      "name": "CloudOps Security",
+      "source": "work_log.py:126 (AppConfig.issue_key default)",
+      "name_source": "probe run 2026-07-28 (instance_probe/trackspace-probe --export; catalogues in kb/probe-catalogues.json)"
     },
     "note": "Worklog searches are not project-scoped, so any project the token can see may appear in results."
   },
   "jql": {
     "worklogs_by_current_user_in_range": {
       "template": "worklogAuthor = currentUser() AND worklogDate >= \"{start_date}\" AND worklogDate <= \"{end_date}\"",
-      "params": {"start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD"},
+      "params": {
+        "start_date": "YYYY-MM-DD",
+        "end_date": "YYYY-MM-DD"
+      },
       "returns": "Issues carrying at least one worklog by the token owner in the range - issues, not worklogs.",
       "source": "work_log.py:268-272; work.py:384-388"
     },
     "worklogs_by_named_user_in_range": {
       "template": "worklogAuthor = \"{username}\" AND worklogDate >= \"{start_date}\" AND worklogDate <= \"{end_date}\"",
-      "params": {"username": "resolved user `name` (or accountId) from /user/search", "start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD"},
+      "params": {
+        "username": "resolved user `name` (or accountId) from /user/search",
+        "start_date": "YYYY-MM-DD",
+        "end_date": "YYYY-MM-DD"
+      },
       "returns": "Same as above for another user.",
       "source": "work.py:363-364,384-388"
     },
@@ -475,10 +559,26 @@
   },
   "pagination": {
     "style": "offset",
-    "request_params": ["startAt", "maxResults"],
-    "response_keys": ["startAt", "maxResults", "total", "<payload array>"],
-    "payload_key": {"search": "issues", "issue_worklogs": "worklogs", "comment_list": "comments"},
-    "page_size": {"search": 100, "issue_worklogs": 1000, "comment_list": 50},
+    "request_params": [
+      "startAt",
+      "maxResults"
+    ],
+    "response_keys": [
+      "startAt",
+      "maxResults",
+      "total",
+      "<payload array>"
+    ],
+    "payload_key": {
+      "search": "issues",
+      "issue_worklogs": "worklogs",
+      "comment_list": "comments"
+    },
+    "page_size": {
+      "search": 100,
+      "issue_worklogs": 1000,
+      "comment_list": 50
+    },
     "termination": "Stop once startAt + <advance> >= total.",
     "advance_strategies": {
       "by_returned_count": {
@@ -495,21 +595,46 @@
   },
   "errors": {
     "observed_handling": {
-      "401": {"meaning": "Invalid or expired PAT.", "visualiser_message": "Auth failed (401). Check TRACKSPACE_PAT.", "source": "work.py:275-276"},
-      "403": {"meaning": "Token lacks permission for the resource.", "visualiser_message": "Forbidden (403). Token lacks permission for this resource.", "source": "work.py:277-278"},
-      "other_4xx_5xx": {"handling": "requests' raise_for_status()", "source": "work.py:279; work_log.py:254,288,309"},
-      "worklog_post_failure": {"handling": "Any status outside 200/201 is reported as `HTTP {status}: {body[:200]}` and counted as a failure; the run continues.", "source": "work_log.py:247-249,1310-1316"},
-      "per_issue_fetch_failure": {"handling": "An exception while fetching one issue's worklogs is logged as `  failed {key}: {e}` and the remaining issues are still processed.", "source": "work_log.py:335-337"}
+      "401": {
+        "meaning": "Invalid or expired PAT.",
+        "visualiser_message": "Auth failed (401). Check TRACKSPACE_PAT.",
+        "source": "work.py:275-276"
+      },
+      "403": {
+        "meaning": "Token lacks permission for the resource.",
+        "visualiser_message": "Forbidden (403). Token lacks permission for this resource.",
+        "source": "work.py:277-278"
+      },
+      "other_4xx_5xx": {
+        "handling": "requests' raise_for_status()",
+        "source": "work.py:279; work_log.py:254,288,309"
+      },
+      "worklog_post_failure": {
+        "handling": "Any status outside 200/201 is reported as `HTTP {status}: {body[:200]}` and counted as a failure; the run continues.",
+        "source": "work_log.py:247-249,1310-1316"
+      },
+      "per_issue_fetch_failure": {
+        "handling": "An exception while fetching one issue's worklogs is logged as `  failed {key}: {e}` and the remaining issues are still processed.",
+        "source": "work_log.py:335-337"
+      }
     },
     "body_shape": {
-      "note": "Jira Data Center error bodies are {\"errorMessages\": [...], \"errors\": {...}}. Neither script parses them - work_log.py surfaces the first 200 characters of the raw body verbatim.",
-      "source": "inferred (standard Jira DC shape); only the raw-body slicing at work_log.py:249 is confirmed"
+      "note": "WITNESSED. Jira Data Center error bodies are {\"errorMessages\": [...], \"errors\": {...}}, confirmed against this instance. A GET of a well-formed but nonexistent key and a GET of a malformed key are indistinguishable: both answer 404 with body {\"errorMessages\":[\"Issue Does Not Exist\"],\"errors\":{}} - so a 404 cannot be used to tell 'no such issue' from 'no permission to see it'. Neither original script parses these bodies; work_log.py surfaces the first 200 characters verbatim.",
+      "witnessed_404_body": "{\"errorMessages\":[\"Issue Does Not Exist\"],\"errors\":{}}",
+      "source": "probe run 2026-07-28 (instance_probe/trackspace-probe --export; catalogues in kb/probe-catalogues.json); raw-body slicing at work_log.py:249"
     },
     "rate_limiting": {
-      "note": "UNCONFIRMED. Neither script handles 429 and no rate-limit response was ever observed. The shared client treats 429 as retryable and honours a Retry-After header if present, falling back to exponential backoff.",
+      "note": "STILL UNCONFIRMED after the 2026-07-28 probe run: the probe's rate-limit burst is opt-in (--rate-limit-burst) and was NOT run, so no 429 has ever been observed from this instance. Neither original script handles 429. The shared client treats 429 as retryable and honours Retry-After when present, falling back to exponential backoff. Do not record an absence of rate limiting - nothing has tested for it.",
       "source": "inferred"
     },
-    "timeouts": {"myself": 30, "search": 60, "issue_worklogs": 60, "add_worklog": 30, "visualiser_all": 30, "source": "work_log.py:246,253,286,307; work.py:274"}
+    "timeouts": {
+      "myself": 30,
+      "search": 60,
+      "issue_worklogs": 60,
+      "add_worklog": 30,
+      "visualiser_all": 30,
+      "source": "work_log.py:246,253,286,307; work.py:274"
+    }
   },
   "worklog_semantics": {
     "started_format_out": "%Y-%m-%dT%H:%M:%S.000%z",
@@ -526,11 +651,73 @@
     "dry_run": true,
     "window": "First day of the current month through that day + 27 days.",
     "recurring_meetings": [
-      {"weekdays": [0, 1, 2, 3, 4], "hour": 10, "minute": 0, "duration_min": 30, "comment": "Daily"},
-      {"weekdays": [1], "hour": 14, "minute": 0, "duration_min": 60, "comment": "SecOps - technical sync"},
-      {"weekdays": [4], "hour": 13, "minute": 0, "duration_min": 30, "comment": "GAC GDN"}
+      {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4
+        ],
+        "hour": 10,
+        "minute": 0,
+        "duration_min": 30,
+        "comment": "Daily"
+      },
+      {
+        "weekdays": [
+          1
+        ],
+        "hour": 14,
+        "minute": 0,
+        "duration_min": 60,
+        "comment": "SecOps - technical sync"
+      },
+      {
+        "weekdays": [
+          4
+        ],
+        "hour": 13,
+        "minute": 0,
+        "duration_min": 30,
+        "comment": "GAC GDN"
+      }
     ],
     "visualiser_window": "30d",
     "source": "work_log.py:126-163; work.py:81"
+  },
+  "workflow": {
+    "statuses": {
+      "count": 183,
+      "file": "kb/probe-catalogues.json",
+      "pointer": "statuses",
+      "note": "Instance-wide status catalogue, not a per-project workflow. Which of these a given issue can reach is decided by its workflow scheme, which was not probed.",
+      "source": "probe run 2026-07-28 (instance_probe/trackspace-probe --export; catalogues in kb/probe-catalogues.json)"
+    },
+    "observed_transitions": {
+      "CLOPSSEC-41456": [
+        {
+          "id": "831",
+          "name": "Reopen",
+          "to": {
+            "id": "1",
+            "name": "Open",
+            "statusCategory": "new"
+          },
+          "fields_required": []
+        }
+      ],
+      "note": "A single sample: the transitions available to the token owner FROM THAT ISSUE'S CURRENT STATUS at probe time. It is not the project's full transition graph, and it changes as the issue moves. Always fetch transitions live before executing one.",
+      "source": "probe run 2026-07-28 (instance_probe/trackspace-probe --export; catalogues in kb/probe-catalogues.json)"
+    },
+    "permissions": {
+      "project": "CLOPSSEC",
+      "granted": 69,
+      "denied": 18,
+      "file": "kb/probe-catalogues.json",
+      "pointer": "permissions_CLOPSSEC",
+      "note": "The token owner holds TRANSITION_ISSUES, WORK_ON_ISSUES, ADD_COMMENTS, CREATE_ATTACHMENTS and LINK_ISSUES on this project; ADMINISTER and ARCHIVE_ISSUES are denied. Permissions are per-token and per-project - re-probe, never assume.",
+      "source": "probe run 2026-07-28 (instance_probe/trackspace-probe --export; catalogues in kb/probe-catalogues.json)"
+    }
   }
 }

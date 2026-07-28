@@ -7,8 +7,13 @@
     "orderable": true,
     "navigable": true,
     "searchable": true,
-    "clauseNames": ["summary"],
-    "schema": {"type": "string", "system": "summary"}
+    "clauseNames": [
+      "summary"
+    ],
+    "schema": {
+      "type": "string",
+      "system": "summary"
+    }
   },
   {
     "id": "status",
@@ -18,8 +23,13 @@
     "orderable": false,
     "navigable": true,
     "searchable": true,
-    "clauseNames": ["status"],
-    "schema": {"type": "status", "system": "status"}
+    "clauseNames": [
+      "status"
+    ],
+    "schema": {
+      "type": "status",
+      "system": "status"
+    }
   },
   {
     "id": "assignee",
@@ -29,52 +39,38 @@
     "orderable": true,
     "navigable": true,
     "searchable": true,
-    "clauseNames": ["assignee"],
-    "schema": {"type": "user", "system": "assignee"}
+    "clauseNames": [
+      "assignee"
+    ],
+    "schema": {
+      "type": "user",
+      "system": "assignee"
+    }
   },
   {
-    "id": "customfield_10001",
-    "key": "customfield_10001",
-    "name": "Team",
+    "id": "customfield_21500",
+    "key": "customfield_21500",
+    "name": "Estimated time",
     "custom": true,
     "orderable": true,
     "navigable": true,
     "searchable": true,
-    "clauseNames": ["cf[10001]", "Team"],
-    "schema": {
-      "type": "option",
-      "custom": "com.atlassian.jira.plugin.system.customfieldtypes:select",
-      "customId": 10001
-    }
+    "clauseNames": [
+      "cf[21500]",
+      "Estimated time"
+    ]
   },
   {
-    "id": "customfield_10002",
-    "key": "customfield_10002",
-    "name": "Story Points",
+    "id": "customfield_18303",
+    "key": "customfield_18303",
+    "name": "Proposed effort (hrs)",
     "custom": true,
     "orderable": true,
     "navigable": true,
     "searchable": true,
-    "clauseNames": ["cf[10002]", "Story Points"],
-    "schema": {
-      "type": "number",
-      "custom": "com.atlassian.jira.plugin.system.customfieldtypes:float",
-      "customId": 10002
-    }
-  },
-  {
-    "id": "customfield_10003",
-    "key": "customfield_10003",
-    "name": "Severity",
-    "custom": true,
-    "orderable": true,
-    "navigable": true,
-    "searchable": true,
-    "clauseNames": ["cf[10003]", "Severity"],
-    "schema": {
-      "type": "option",
-      "custom": "com.atlassian.jira.plugin.system.customfieldtypes:select",
-      "customId": 10003
-    }
+    "clauseNames": [
+      "cf[18303]",
+      "Proposed effort (hrs)"
+    ]
   }
 ]

@@ -1,17 +1,86 @@
 [
   {
+    "self": "https://trackspace.lhsystems.com/rest/api/2/status/1",
+    "description": "The issue is open and ready for the assignee to start work on it.",
+    "iconUrl": "https://trackspace.lhsystems.com/images/icons/statuses/open.png",
+    "name": "Open",
     "id": "1",
-    "name": "To Do",
-    "statusCategory": {"key": "new", "name": "To Do"}
+    "statusCategory": {
+      "self": "https://trackspace.lhsystems.com/rest/api/2/statuscategory/2",
+      "id": 2,
+      "key": "new",
+      "colorName": "default",
+      "name": "To Do"
+    }
   },
   {
-    "id": "3",
+    "self": "https://trackspace.lhsystems.com/rest/api/2/status/4",
+    "description": "This issue was once resolved, but the resolution was deemed incorrect. From here issues are either marked assigned or resolved.",
+    "iconUrl": "https://trackspace.lhsystems.com/images/icons/statuses/reopened.png",
+    "name": "Reopened",
+    "id": "4",
+    "statusCategory": {
+      "self": "https://trackspace.lhsystems.com/rest/api/2/statuscategory/2",
+      "id": 2,
+      "key": "new",
+      "colorName": "default",
+      "name": "To Do"
+    }
+  },
+  {
+    "self": "https://trackspace.lhsystems.com/rest/api/2/status/3",
+    "description": "Work on this issues is in progress by the assignee.",
+    "iconUrl": "https://trackspace.lhsystems.com/images/icons/status_in_progress.gif",
     "name": "In Progress",
-    "statusCategory": {"key": "indeterminate", "name": "In Progress"}
+    "id": "3",
+    "statusCategory": {
+      "self": "https://trackspace.lhsystems.com/rest/api/2/statuscategory/4",
+      "id": 4,
+      "key": "indeterminate",
+      "colorName": "inprogress",
+      "name": "In Progress"
+    }
   },
   {
-    "id": "10001",
-    "name": "Done",
-    "statusCategory": {"key": "done", "name": "Done"}
+    "self": "https://trackspace.lhsystems.com/rest/api/2/status/10002",
+    "description": "An analysis of this issue is in progress.",
+    "iconUrl": "https://trackspace.lhsystems.com/images/icons/status_analysis.gif",
+    "name": "Analysis",
+    "id": "10002",
+    "statusCategory": {
+      "self": "https://trackspace.lhsystems.com/rest/api/2/statuscategory/4",
+      "id": 4,
+      "key": "indeterminate",
+      "colorName": "inprogress",
+      "name": "In Progress"
+    }
+  },
+  {
+    "self": "https://trackspace.lhsystems.com/rest/api/2/status/5",
+    "description": "A resolution has been taken, and it is awaiting verification by reporter. From here issues are either reopened, or are closed.",
+    "iconUrl": "https://trackspace.lhsystems.com/images/icons/statuses/resolved.png",
+    "name": "Resolved",
+    "id": "5",
+    "statusCategory": {
+      "self": "https://trackspace.lhsystems.com/rest/api/2/statuscategory/3",
+      "id": 3,
+      "key": "done",
+      "colorName": "success",
+      "name": "Done"
+    }
+  },
+  {
+    "self": "https://trackspace.lhsystems.com/rest/api/2/status/6",
+    "description": "The issue is considered finished, the resolution is correct. Issues which are closed can be reopened.",
+    "iconUrl": "https://trackspace.lhsystems.com/images/icons/statuses/closed.png",
+    "name": "Closed",
+    "id": "6",
+    "statusCategory": {
+      "self": "https://trackspace.lhsystems.com/rest/api/2/statuscategory/3",
+      "id": 3,
+      "key": "done",
+      "colorName": "success",
+      "name": "Done"
+    }
   }
 ]

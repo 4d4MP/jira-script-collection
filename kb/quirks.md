@@ -109,3 +109,32 @@ reader understands is still visible rather than silent.
 
 Every URL in both scripts points at `https://trackspace.lhsystems.com`. The
 docstring is loose prose about the hosting domain. Trust the URLs.
+
+### 18. `GET /issue/createmeta` 404s with "Issue Does Not Exist"
+
+Probed 2026-07-28. The legacy aggregated createmeta resource is not served by
+this instance, so `/rest/api/2/issue/createmeta` falls through to
+`/rest/api/2/issue/{key}` and `createmeta` is parsed as an issue key — which is
+why the error talks about a missing *issue* rather than a missing endpoint. Jira
+DC 9+ replaced it with `/issue/createmeta/{projectIdOrKey}/issuetypes`, but that
+successor path has **not** been probed here; do not assume it works. The lesson
+generalises: on this instance a 404 from anything under `/issue/` may mean "no
+such endpoint", not "no such issue".
+
+### 19. A 404 cannot distinguish "no such issue" from "no permission"
+
+Also probed 2026-07-28: a well-formed but nonexistent key (`BOGUS-1`) and a
+malformed one (`not-a-key`) both answer `404` with the byte-identical body
+`{"errorMessages":["Issue Does Not Exist"],"errors":{}}`. Jira deliberately does
+not leak the existence of issues the token cannot see, so no error-message
+parsing can tell the two apart. Tools should say "not found or not visible".
+
+### 20. The available transitions are a snapshot, not a graph
+
+`GET /issue/{key}/transitions` returns only what the token owner can do **from
+the issue's current status** — on 2026-07-28 that was a single transition
+(`831` Reopen → Open) for CLOPSSEC-41456. It is not the project's workflow
+graph, and it changes the moment the issue moves. Anything that executes a
+transition must re-fetch the list immediately beforehand rather than caching an
+id; `issue_companion` does exactly that and refuses ids that are not in the
+freshly fetched set.

@@ -23,13 +23,13 @@ scripts read and write; users, issue summaries and ids are invented. Emails use
 | `issue_worklog_malformed.json` | `GET /issue/{key}/worklog` | Missing `started`, unparseable `started`, empty `author`, missing `timeSpentSeconds`, ADF `comment` object |
 | `add_worklog_created.json` | `POST /issue/{key}/worklog` | 201 response; only `id` is consumed |
 | `errors.json` | any | 401 / 403 / 404 / 429 (+`Retry-After`) / 500 / 400-on-worklog bodies |
-| `field_list.json` | `GET /field` | System fields plus 3 custom fields (select/float/option) — **placeholder until probed** |
-| `project_CLOPSSEC.json` | `GET /project/{key}` | Project name, lead, issue types — **placeholder until probed** |
-| `issue_createmeta_CLOPSSEC.json` | `GET /issue/createmeta` | Issue types/fields creatable in `CLOPSSEC` — **placeholder until probed** |
-| `status_list.json` | `GET /status` | Global status catalogue (To Do/In Progress/Done) — **placeholder until probed** |
-| `issue_transitions_CLOPSSEC-41456.json` | `GET /issue/{key}/transitions` | Two available transitions — **placeholder until probed** |
+| `field_list.json` | `GET /field` | Three system fields plus two **real** custom fields captured by the 2026-07-28 probe run; the invented ids it used to carry are gone. The full 988-field catalogue is in `kb/probe-catalogues.json` |
+| `project_CLOPSSEC.json` | `GET /project/{key}` | **Probed** name (`CloudOps Security`) and all 7 real issue types; the `lead` block is still synthetic |
+| `issue_createmeta_CLOPSSEC.json` | `GET /issue/createmeta` | Success shape for an endpoint this instance **does not serve** — the 2026-07-28 probe got a 404 (see `endpoints.issue_createmeta.availability`). Kept so the probe's parsing stays covered; do not read it as evidence the endpoint works |
+| `status_list.json` | `GET /status` | Six **real** statuses spanning all three categories; the instance actually has 183, catalogued in `kb/probe-catalogues.json` |
+| `issue_transitions_CLOPSSEC-41456.json` | `GET /issue/{key}/transitions` | Exactly what that issue returned on 2026-07-28: one transition (`831` Reopen → Open). A snapshot of one status, not the project's transition graph |
 | `issue_get_CLOPSSEC-41456.json` | `GET /issue/{key}` | Full issue with `?expand=changelog` history and `?fields=attachment` list |
-| `mypermissions_CLOPSSEC.json` | `GET /mypermissions` | Mixed granted/denied permissions (`ADMINISTER` denied) — **placeholder until probed** |
+| `mypermissions_CLOPSSEC.json` | `GET /mypermissions` | Nine **real** permission records (`ADMINISTER`/`ARCHIVE_ISSUES` denied, the rest granted); all 87 are in `kb/probe-catalogues.json` |
 | `comment_list_CLOPSSEC-41456.json` | `GET /issue/{key}/comment` | Three comments, two authors, offset envelope |
 | `comment_created.json` | `POST`/`PUT /issue/{key}/comment[/{id}]` | Single created/updated comment object |
 | `attachment_get.json` | `GET /attachment/{id}` | Single attachment's metadata |

@@ -161,16 +161,65 @@ def test_unknown_issue_key_is_a_clean_error_and_exit_1(
 # ---------------------------------------------------------------------------
 # transitions
 # ---------------------------------------------------------------------------
-def test_transitions_lists_fixture_transitions_and_the_gated_note(
+def test_transitions_lists_fixture_transitions_and_hints_at_execution(
     kb: KnowledgeBase, monkeypatch: pytest.MonkeyPatch, capsys: Any
 ) -> None:
     patch_client(monkeypatch, kb)
     code = run("transitions", ISSUE)
     out = capsys.readouterr().out
     assert code == 0
-    assert "Start Progress" in out
-    assert "Done" in out
-    assert "not supported yet" in out
+    assert "Reopen" in out
+    assert "Open" in out
+    assert "--to" in out
+
+
+def test_transition_executes_by_name(
+    kb: KnowledgeBase, monkeypatch: pytest.MonkeyPatch, capsys: Any
+) -> None:
+    sessions = patch_client(monkeypatch, kb)
+    code = run("transitions", ISSUE, "--to", "Reopen", "--yes")
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "moved to Open" in out
+    posts = [c for c in sessions[0].calls if c.method == "POST"]
+    assert len(posts) == 1
+    assert posts[0].json_body == {"transition": {"id": "831"}}
+
+
+def test_transition_executes_by_id_and_matches_case_insensitively(
+    kb: KnowledgeBase, monkeypatch: pytest.MonkeyPatch, capsys: Any
+) -> None:
+    sessions = patch_client(monkeypatch, kb)
+    assert run("transitions", ISSUE, "--to", "831", "--yes") == 0
+    assert run("transitions", ISSUE, "--to", "reOPEN", "--yes") == 0
+    capsys.readouterr()
+    assert [c.json_body for c in sessions[0].calls if c.method == "POST"] == [
+        {"transition": {"id": "831"}}
+    ]
+
+
+def test_transition_carries_a_comment(
+    kb: KnowledgeBase, monkeypatch: pytest.MonkeyPatch, capsys: Any
+) -> None:
+    sessions = patch_client(monkeypatch, kb)
+    code = run("transitions", ISSUE, "--to", "Reopen", "--comment", "back to you", "--yes")
+    capsys.readouterr()
+    assert code == 0
+    posts = [c for c in sessions[0].calls if c.method == "POST"]
+    assert posts[0].json_body["update"] == {"comment": [{"add": {"body": "back to you"}}]}
+
+
+def test_unavailable_transition_is_refused_without_posting(
+    kb: KnowledgeBase, monkeypatch: pytest.MonkeyPatch, capsys: Any
+) -> None:
+    """The live list is the validation set — the graph depends on current status."""
+    sessions = patch_client(monkeypatch, kb)
+    code = run("transitions", ISSUE, "--to", "Start Progress", "--yes")
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "No transition 'Start Progress' available" in out
+    assert "831=Reopen" in out
+    assert [c for c in sessions[0].calls if c.method == "POST"] == []
 
 
 # ---------------------------------------------------------------------------

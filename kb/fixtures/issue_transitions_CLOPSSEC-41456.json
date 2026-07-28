@@ -2,22 +2,25 @@
   "expand": "transitions",
   "transitions": [
     {
-      "id": "11",
-      "name": "Start Progress",
+      "id": "831",
+      "name": "Reopen",
+      "description": "",
+      "opsbarSequence": 2147483647,
       "to": {
-        "id": "3",
-        "name": "In Progress",
-        "statusCategory": {"key": "indeterminate", "name": "In Progress"}
-      }
-    },
-    {
-      "id": "21",
-      "name": "Done",
-      "to": {
-        "id": "10001",
-        "name": "Done",
-        "statusCategory": {"key": "done", "name": "Done"}
-      }
+        "self": "https://trackspace.lhsystems.com/rest/api/2/status/1",
+        "description": "The issue is open and ready for the assignee to start work on it.",
+        "iconUrl": "https://trackspace.lhsystems.com/images/icons/statuses/open.png",
+        "name": "Open",
+        "id": "1",
+        "statusCategory": {
+          "self": "https://trackspace.lhsystems.com/rest/api/2/statuscategory/2",
+          "id": 2,
+          "key": "new",
+          "colorName": "default",
+          "name": "To Do"
+        }
+      },
+      "fields": {}
     }
   ]
 }

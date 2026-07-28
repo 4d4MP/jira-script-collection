@@ -68,10 +68,27 @@ def test_unknown_lookups_are_explicit(kb: KnowledgeBase) -> None:
         kb.field_id("customfield_10001")
 
 
-def test_custom_fields_are_recorded_as_unknown_not_invented(kb: KnowledgeBase) -> None:
+def test_probed_facts_carry_their_provenance(kb: KnowledgeBase) -> None:
+    """The 2026-07-28 probe run closed these unknowns; each must cite the run.
+
+    ``fields.custom`` stays empty on purpose even though 988 custom fields are
+    now catalogued: a field is copied in only when a tool genuinely needs it.
+    """
     assert kb.raw["fields"]["custom"] == {}
-    assert "UNKNOWN" in kb.raw["fields"]["issue_types_note"]
-    assert "UNKNOWN" in kb.raw["fields"]["workflow_states_note"]
+    catalogue = kb.raw["fields"]["custom_catalogue"]
+    assert catalogue["count"] == 988
+    assert "probe run 2026-07-28" in catalogue["source"]
+    assert "PROBED" in kb.raw["fields"]["issue_types_note"]
+    assert "PROBED" in kb.raw["fields"]["workflow_states_note"]
+    assert kb.raw["fields"]["issue_types"]["source"]
+    assert kb.raw["workflow"]["statuses"]["source"]
+
+
+def test_rate_limiting_is_still_recorded_as_unconfirmed(kb: KnowledgeBase) -> None:
+    """The probe's burst step is opt-in and was never run — do not claim otherwise."""
+    note = kb.raw["errors"]["rate_limiting"]["note"]
+    assert "UNCONFIRMED" in note
+    assert "Do not record an absence of rate limiting" in note
 
 
 def test_defaults_and_worklog_format(kb: KnowledgeBase) -> None:

@@ -146,12 +146,21 @@ burst, reported strictly as "0/N requests returned 429 at burst=N on <date>".
 The probe **never writes `kb/trackspace.json`** — findings are folded in by a
 human, with the probe run cited as the fact's `source`.
 
+A run on **2026-07-28** closed most of the KB's declared unknowns: `CLOPSSEC` is
+"CloudOps Security", 988 custom fields and 183 statuses were catalogued into
+`kb/probe-catalogues.json`, and the 404 error body is now witnessed rather than
+inferred. Two things did not close: the `rate-limit` step is opt-in and was not
+run (so **nothing has ever observed a 429 from this instance** — the KB says so
+explicitly), and `GET /issue/createmeta` turned out to 404 on this instance
+(`kb/quirks.md` #18). See `kb/build-notes.md` for the full fold-in.
+
 ### `issue_companion` — everything around one issue
 
 ```bash
 python -m issue_companion                              # interactive
 python -m issue_companion show CLOPSSEC-41456 --changelog --attachments --links
-python -m issue_companion transitions CLOPSSEC-41456   # list only
+python -m issue_companion transitions CLOPSSEC-41456   # list
+python -m issue_companion transitions CLOPSSEC-41456 --to Reopen --yes
 python -m issue_companion comment CLOPSSEC-41456 add --body "note"
 python -m issue_companion attach CLOPSSEC-41456 upload report.png
 python -m issue_companion link CLOPSSEC-41456 add --type Blocks --to CLOPSSEC-41501
@@ -160,9 +169,13 @@ python -m issue_companion link CLOPSSEC-41456 add --type Blocks --to CLOPSSEC-41
 Comments (list/add/update/delete), attachments (list/upload/delete — upload
 preflights `/attachment/meta` and refuses oversized files), issue and remote
 links (type names validated against the instance's link types), and the
-changelog. Mutations confirm interactively unless `--yes`. Executing workflow
-transitions is deliberately **not** built yet: it is gated on a probe run
-recording a real transition graph first.
+changelog. Mutations confirm interactively unless `--yes`.
+
+Executing a transition (`--to <id or name>`) was gated on a probe run recording
+a real transition graph; the 2026-07-28 run did, so it now exists. It re-fetches
+the transition list first and refuses anything not in that fresh set, because
+the available transitions are a snapshot of the issue's *current* status, not a
+workflow graph (`kb/quirks.md` #20). Like the worklog POST it is never retried.
 
 ## Adding a tool
 

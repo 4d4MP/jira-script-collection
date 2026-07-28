@@ -1,39 +1,75 @@
 {
   "permissions": {
     "WORK_ON_ISSUES": {
-      "id": "90",
+      "id": "20",
       "key": "WORK_ON_ISSUES",
       "name": "Work On Issues",
+      "type": "PROJECT",
+      "description": "Ability to log work done against an issue. Only useful if Time Tracking is turned on.",
       "havePermission": true
     },
     "ADD_COMMENTS": {
-      "id": "20",
+      "id": "15",
       "key": "ADD_COMMENTS",
       "name": "Add Comments",
+      "type": "PROJECT",
+      "description": "Ability to comment on issues.",
       "havePermission": true
     },
     "CREATE_ATTACHMENTS": {
       "id": "19",
       "key": "CREATE_ATTACHMENTS",
       "name": "Create Attachments",
+      "type": "PROJECT",
+      "description": "Users with this permission may create attachments.",
       "havePermission": true
     },
     "TRANSITION_ISSUES": {
-      "id": "23",
+      "id": "46",
       "key": "TRANSITION_ISSUES",
       "name": "Transition Issues",
+      "type": "PROJECT",
+      "description": "Ability to transition issues.",
       "havePermission": true
     },
     "LINK_ISSUES": {
-      "id": "26",
+      "id": "21",
       "key": "LINK_ISSUES",
       "name": "Link Issues",
+      "type": "PROJECT",
+      "description": "Ability to link issues together and create linked issues. Only useful if issue linking is turned on.",
+      "havePermission": true
+    },
+    "EDIT_ISSUES": {
+      "id": "12",
+      "key": "EDIT_ISSUES",
+      "name": "Edit Issues",
+      "type": "PROJECT",
+      "description": "Ability to edit issues.",
+      "havePermission": true
+    },
+    "BROWSE_PROJECTS": {
+      "id": "10",
+      "key": "BROWSE_PROJECTS",
+      "name": "Browse Projects",
+      "type": "PROJECT",
+      "description": "Ability to browse projects and the issues within them.",
       "havePermission": true
     },
     "ADMINISTER": {
       "id": "0",
       "key": "ADMINISTER",
-      "name": "Administer Jira",
+      "name": "Jira Administrators",
+      "type": "GLOBAL",
+      "description": "Ability to perform most administration functions (excluding Import & Export, SMTP Configuration, etc.).",
+      "havePermission": false
+    },
+    "ARCHIVE_ISSUES": {
+      "id": "-1",
+      "key": "ARCHIVE_ISSUES",
+      "name": "Archive Issues",
+      "type": "PROJECT",
+      "description": "Ability to archive issues for a specific project.",
       "havePermission": false
     }
   }
